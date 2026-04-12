@@ -1,0 +1,27 @@
+name: 2025_deep_CWFS
+channels:
+  - anaconda
+  - conda-forge
+  - defaults
+dependencies:
+  - hdf5=1.12.2
+  - jupyter=1.0.0
+  - matplotlib=3.7.2
+  - mayavi=4.8.1
+  - notebook=7.2.2
+  - numpy=1.24.3
+  - opencv=4.7.0
+  - pillow=10.4.0
+  - pip=24.2
+  - py-opencv=4.7.0
+  - python=3.12
+  - scikit-image=0.20.0
+  - pip:
+      - pip-chill>=1.0.3
+      - protobuf
+      # - protobuf>=5.29.5
+      - scipy>=1.10.1
+      - tifffile>=2023.7.10
+      - torch --index-url https://download.pytorch.org/whl/cu126
+      - torchvision --index-url https://download.pytorch.org/whl/cu126
+      - py_wave_propagator @ git+https://github.com/Muhammad-Kazim/wave_prop_package.git@main
