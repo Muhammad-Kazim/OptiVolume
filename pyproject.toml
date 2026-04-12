@@ -10,7 +10,7 @@ authors = [
   { name="Syed Kazim", email="kazimsyed4@gmail.com" }
 ]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 license = { file = "LICENSE" }
 dependencies = [
  "numpy>=1.24",
