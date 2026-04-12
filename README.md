@@ -1,4 +1,4 @@
-# **Coded_WFS_SIM**
+# **OptiVolume**
 
 ## **Description**
 `OptiVolume` is a Python library for synthesizing differentiable refractive index volumes with arbitrary configurations of simple shapes, such as ellipsoids, cuboids, and planes. Light propagation through 3D structures is simulated using the Beam Propagation Method (BPM). 
