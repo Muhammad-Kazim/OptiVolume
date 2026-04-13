@@ -26,3 +26,4 @@ dependencies:
       - torchvision --index-url https://download.pytorch.org/whl/cu126
       - py_wave_propagator @ git+https://github.com/Muhammad-Kazim/wave_prop_package.git@main
       - optical_volume @ git+https://github.com/Muhammad-Kazim/OptiVolume.git@main
+      - configobj
