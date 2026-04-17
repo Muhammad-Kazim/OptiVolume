@@ -46,7 +46,7 @@ class PhaseMask(nn.Module):
     
     def get_num_tiles(self):
         return (self.nx, self.ny)
-    
+
 
 class _PhaseMask():
     def __init__(self, side_length: Tensor, spatial_resolution: Tuple[float, float, float], 
