@@ -41,8 +41,8 @@ if __name__ == '__main__':
     
     
     # example 1: create two spheres and visulization the RI volume
-    sphere1 = Sphere(torch.tensor((55, 50, 40)).float(), torch.tensor((10.)), torch.tensor(1.3), softness=1e-2)
-    sphere2 = Sphere(torch.tensor((50, 50, 40)).float(), torch.tensor((10.)), torch.tensor(1.3), softness=1e-2)
+    sphere1 = Sphere(torch.tensor((55, 50, 40)).float(), torch.tensor((10.)), torch.tensor(1.3), softness=1e2)
+    sphere2 = Sphere(torch.tensor((30, 50, 40)).float(), torch.tensor((10.)), torch.tensor(1.3), softness=1e2)
     
     grid = Grid((100, 100, 100), (1, 1, 1))
     
@@ -64,11 +64,12 @@ if __name__ == '__main__':
     vol2.add([sphere2])
     
     # optimizer = Adam(vol1.parameters(), lr=1e-3)
-    optimizer = Adam([sphere1.center], lr=1e-2)
+    optimizer = Adam([sphere1.center], lr=1e-1)
     loss_fn = nn.MSELoss()
     
     centers = []
-    for i in range(10):
+    for i in range(1000):
+        optimizer.zero_grad()
         ri_dist = vol1.forward()
         loss = loss_fn(ri_dist, vol2.forward())
         print(loss.item())
