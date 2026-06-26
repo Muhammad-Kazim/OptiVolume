@@ -42,7 +42,7 @@ if __name__ == "__main__":
     lens = ObjImgMap(WL, spacing, shape)
     
     sysA = OpticalSystem((
-        prop.set_params(dist=5e-3), lens.low_pass_filter(NA), prop.set_params(dist=1e-3)
+        prop.set_params(dist=0.5e-3), lens.low_pass_filter(NA), prop.set_params(dist=0.1e-3)
     ))
     
     field = sysA(wavefield)
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     plt.show()
     
     sysA = OpticalSystem((
-        prop.set_params(dist=5e-3), lens.low_pass_filter(NA)
+        prop.set_params(dist=0.5e-3), lens.low_pass_filter(NA)
     ))
     
     field = sysA(wavefield)
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     plt.show()
     
     sysA = OpticalSystem((
-        prop.set_params(dist=5e-3), lens.low_pass_filter(NA), prop.set_params(dist=1e-3), prop.set_params(dist=1e-3, direction='backward')
+        prop.set_params(dist=0.5e-3), lens.low_pass_filter(NA), prop.set_params(dist=0.1e-3), prop.set_params(dist=0.1e-3, direction='backward')
     ))
     
     field = sysA(wavefield)
@@ -82,7 +82,7 @@ if __name__ == "__main__":
         prop.set_params(dist=dist)
     ))
     
-    field = cwfs_baisc(wavefield)
+    field = cwfs_baisc(wavefield*0 + torch.ones_like(wavefield))
     
     plt.imshow(field.abs().detach()**2, cmap='gray')
     plt.colorbar()
