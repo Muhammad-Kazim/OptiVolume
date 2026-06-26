@@ -132,7 +132,6 @@ def make_ellipsoids(centers: Tensor, radii: Tensor, RIs: Tensor, rotation: bool 
         shapes.append(Ellipsoid(centers[i], radii[i], RIs[i], rotation=rotation, softness=softness))
     
     return shapes
-
     
 def _soft_step(x: Tensor, softness=1e-6): 
     return torch.sigmoid(x / softness)
@@ -156,3 +155,19 @@ if __name__ == '__main__':
     plt.colorbar()
     plt.grid()
     plt.show()
+    
+    # make ellipsoids examples
+    
+    obj_2 = make_ellipsoids(torch.tensor([[50, 20, 20], [50, 20, 50]]).float(), 
+                            torch.tensor([[10, 5, 9], [10, 5, 9]]).float(), 
+                            torch.tensor([1.5, 1.6]), rotation=True)
+    
+    print("Two Ellipsoids", obj_2)
+    
+    plt.imshow(obj_2[1](grid)[:, 20, :].detach())
+    plt.plot(20, 50, 'r*')
+    plt.colorbar()
+    plt.grid()
+    plt.show()
+    
+    print(nn.ModuleList((obj_2 + [obj])))
