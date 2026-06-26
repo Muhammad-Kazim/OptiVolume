@@ -133,6 +133,63 @@ def make_ellipsoids(centers: Tensor, radii: Tensor, RIs: Tensor, rotation: bool 
     
     return shapes
     
+class Plane(nn.Module):
+    """
+        Add a thick plane to the grid. Physical coordinates.
+
+        Args:
+            point (float): point that lies on the plane.
+            normal (float): normal to the planes.
+            RI (float): RI of plane.
+            thickness (float, optional): Thickness/2 on either halfspace.
+    """
+    def __init__(self, point: Tensor, normal: Tensor, thickness: Tensor, softness: float = 1e-12):
+        super().__init__()
+        
+        self.point = nn.Parameter(point)
+        self.normal = nn.Parameter(normal)/torch.linalg.vector_norm(normal)
+        self.thickness = nn.Parameter(thickness)
+        
+        self.softness = softness
+    
+    def forward(self, grid: Tensor):
+        px, py, pz = self.point
+        nx, ny, nz = self.normal
+        
+        X = grid.X - px
+        Y = grid.Y - py
+        Z = grid.Z - pz
+        
+        # Plane equation: n . (x - p) = 0
+        mask_p = self._soft_step(nx * X + ny * Y + nz * Z, softness=self.softness)
+        mask_n = 1 - self._soft_step(nx * X + ny * Y + nz * Z - self.thickness, softness=self.softness)
+        
+        return 1 - mask_p * mask_n
+    
+    
+def add_plane(self, point: Tensor, normal: Tensor, RI: Tensor, thickness: Tensor = None, softness: float = 1e-9):
+        """
+        Add a thick plane to the grid. Physical coordinates.
+
+        Args:
+            point (float): point that lies on the plane.
+            normal (float): normal to the planes.
+            RI (float): RI of plane.
+            thickness (float, optional): Thickness/2 on either halfspace.
+        """
+        px, py, pz = point
+        nx, ny, nz = normal/torch.linalg.vector_norm(normal)
+        
+        if thickness is None:
+            thickness = 2*self.dz
+            
+        # Plane equation: n . (x - p) = 0
+        mask_p = self._soft_step(nx * (self._x_mesh - px) + ny * (self._y_mesh - py) + nz * (self._z_mesh - pz), softness=softness)
+        mask_n = 1 - self._soft_step(nx * (self._x_mesh - px) + ny * (self._y_mesh - py) + nz * (self._z_mesh - pz) - thickness, softness=softness)
+        
+        plane_mask = mask_p * mask_n
+        self.grid = self.grid * (1 - plane_mask) + RI * plane_mask
+        
 def _soft_step(x: Tensor, softness=1e-6): 
     return torch.sigmoid(x / softness)
 
