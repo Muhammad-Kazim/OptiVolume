@@ -8,7 +8,7 @@ class Volume(nn.Module):
         super().__init__()
         
         self.grid = grid
-        self.n_bg = n_bg
+        self.register_buffer('n_bg', n_bg)
         self.shapes = nn.ModuleList()
         # self.field = nn.Parameter(torch.ones_like(self.grid.X) * self.n_bg)
         
@@ -27,7 +27,7 @@ class Volume(nn.Module):
         super().to(device)
         if self.grid.X.device != torch.device(device):
             self.grid = self.grid.to(device)
-        self.n_bg = self.n_bg.to(device)
+        # self.n_bg = self.n_bg.to(device)
         
         return self
 
