@@ -3,33 +3,42 @@ from torch import nn, Tensor
 from typing import Optional, Tuple, List
 
 
-class Volume(nn.Module):
-    def __init__(self, grid: Tensor, n_bg: Tensor):
+class Grid(nn.Module):
+    def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], device: str='cpu'):
         super().__init__()
+
+        self.nx, self.ny, self.nz = shape
+        self.dx, self.dy, self.dz = spacing
+
+        x = torch.arange(self.nx, device=device) * self.dx
+        y = torch.arange(self.ny, device=device) * self.dy
+        z = torch.arange(self.nz, device=device) * self.dz
+
+        X, Y, Z = torch.meshgrid(x, y, z, indexing="ij")
         
-        self.grid = grid
+        self.register_buffer('X', X)
+        self.register_buffer('Y', Y)
+        self.register_buffer('Z', Z)
+
+
+class Volume(Grid):
+    def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], n_bg: Tensor):
+        super().__init__(shape, spacing)
+   
         self.register_buffer('n_bg', n_bg)
         self.shapes = nn.ModuleList()
-        # self.field = nn.Parameter(torch.ones_like(self.grid.X) * self.n_bg)
         
     def add(self, shape: List):
         self.shapes.extend(shape)
 
     def forward(self):
-        field = torch.ones_like(self.grid.X) * self.n_bg
+        field = torch.ones_like(self.X) * self.n_bg
         for shape in self.shapes:
-            mask = shape(self.grid)
+            mask = shape(self)
             field = field * (1 - mask) + shape.RI * mask
 
         return field
-        
-    def to(self, device: str):
-        super().to(device)
-        if self.grid.X.device != torch.device(device):
-            self.grid = self.grid.to(device)
-        # self.n_bg = self.n_bg.to(device)
-        
-        return self
+
 
 if __name__ == '__main__':
     from grid import Grid
