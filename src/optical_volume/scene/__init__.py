@@ -1,8 +1,2 @@
-from . import grid
-from . import shapes
-from . import volume
-
-
-__all__ = [
-    "grid", "shapes", "volume"
-]
+from .grid import Grid
+from .volume import Volume

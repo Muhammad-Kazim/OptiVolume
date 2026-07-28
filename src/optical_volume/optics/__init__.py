@@ -1,9 +1,5 @@
-from . import lens
-from . import phase_mask
-from . import system
-from . import propagator
+from .lens import ObjImgMap
+from .phase_mask import PhaseMask
+from .system import OpticalSystem
+from .propagator import Freespace, BeamPropMethod
 from . import utils
-
-__all__ = [
-    "lens", "phase_mask", "system", "propagator", "utils"
-]
