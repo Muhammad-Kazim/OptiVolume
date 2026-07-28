@@ -1,4 +1,4 @@
-name: 2026_optical_volume
+name: OptiVolumeDevelopment
 channels:
   - anaconda
   - conda-forge
@@ -24,6 +24,8 @@ dependencies:
       - tifffile>=2023.7.10
       - torch --index-url https://download.pytorch.org/whl/cu126
       - torchvision --index-url https://download.pytorch.org/whl/cu126
-      - py_wave_propagator @ git+https://github.com/Muhammad-Kazim/wave_prop_package.git@main
-      - optical_volume @ git+https://github.com/Muhammad-Kazim/OptiVolume.git@main
+      # - py_wave_propagator @ git+https://github.com/Muhammad-Kazim/wave_prop_package.git@main
+      - git+https://github.com/Muhammad-Kazim/wave_prop_package.git
+      - -e .
+      # - optical_volume @ git+https://github.com/Muhammad-Kazim/OptiVolume.git@main
       - configobj

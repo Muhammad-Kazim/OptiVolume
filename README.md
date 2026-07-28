@@ -17,6 +17,10 @@ git clone https://github.com/Muhammad-Kazim/OptiVolume.git
 ```
 2. Update the environment.yml conda env location, torch+cu if required.
 ```bash
-cd coded_wfs_sim
+cd OptiVolume
 conda env create -f environment.yml
+```
+3. To install OptiVolume in developer mode:
+```
+pip intsall -e .
 ```
