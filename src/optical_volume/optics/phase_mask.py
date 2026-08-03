@@ -1,100 +1,143 @@
 import torch
 from torchvision.transforms import GaussianBlur
+import torchvision
 
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Union
 from torch import nn, Tensor
+import torch.nn.functional as F
 
 
-class PhaseMask(nn.Module):
-    def __init__(self, side_length: Tensor, spatial_resolution: Tuple[float, float, float], 
-                 grid_shape: Tuple[float, float, float], height: Tensor, prob: float = 0.5, binary: bool=True):
+class BinaryPhaseMask(nn.Module):
+    
+    def __init__(self, wavelength: float, side_length: float, spacing: Tuple[float, float, float], 
+                 shape: Tuple[int, int, int], height: float, sigma: float, RI_PM: float, prob: float = 0.5, 
+                 RI_bg: float = 1., map: Tensor = None):
+        
         super().__init__()
         
-        self.grid_size = grid_shape[:2] # 100x100
-        self.tile_size_px = torch.ceil(side_length/spatial_resolution[0]).int() # 25
-        self.nx, self.ny = torch.ceil(grid_shape[0]/self.tile_size_px).int(), torch.ceil(grid_shape[1]/self.tile_size_px).int() # 16x16
+        self.wl = wavelength
+        self.Nx, self.Ny = shape[:2] # 100x100
+        self.tile_size_px = torch.ceil(torch.tensor(side_length/spacing[0])).int() # 25, sqaure cells in voxels
+        self.num_x, self.num_y = torch.ceil(shape[0]/self.tile_size_px).int(), torch.ceil(shape[1]/self.tile_size_px).int() # 16x16, number of tiles
+        self.RI_PM = RI_PM
         
-        self.binary = binary
-        
-        if self.binary:
-            assert height.dim() == 0 or height.dim() == 1, f"Height dims is equal to {height.dim()} > 1. Phase mask cannot be binary"
-            self.height = nn.Parameter(height)
-            self.map = nn.Parameter(self._init_random(prob=prob).float())
+        self.n0 = RI_bg
+        # self.padding = padding
+
+        self.height = nn.Parameter(torch.tensor(height))
+        self.log_sigma = nn.Parameter(torch.log(torch.tensor(sigma)))
+
+        if map is None:
+            map = self._init_random(prob=prob)
         else:
-            assert height.size() == self.get_num_tiles(), f"Param height must be of shape {self.nx}x{self.ny}"
-            self.map = nn.Parameter(height)
+            assert type(map) == Tensor, "Map must be a Tensor"
+            assert map.size() == self.get_num_tiles(), f"Param height must be of shape {self.num_x}x{self.num_y}"
         
-    def forward(self, RI_pm: Tensor, wl: float, sigma: float = None, padding: int = 0, RI_bg: float = 1.):
-        
-        mask = self.map.repeat_interleave(self.tile_size_px, 0).repeat_interleave(self.tile_size_px, 1)[:self.grid_size[0], :self.grid_size[1]]
-        mask = torch.clamp(mask, min=0) # height cannot be negative
-        mask = torch.nn.functional.pad(mask, pad = ([padding]*4)) # to enable padding, need zeros at bounadry. OW random patterns stretched.
-        
-        if self.binary:
-            mask = _soft_step(mask)*self.height
-        
-        mask = mask*RI_pm + (mask.max() - mask)*RI_bg
-        
-        if sigma is not None:
-            kernel_size = 2*int(4.*sigma + 0.5) + 1
-            mask = GaussianBlur(kernel_size, sigma=sigma)(mask.unsqueeze(0)).squeeze()
+        mask = map.repeat_interleave(self.tile_size_px, 0).repeat_interleave(self.tile_size_px, 1)[:self.Nx, :self.Ny]
+        self.register_buffer('mask', mask)
+
+    @property
+    def sigma(self):
+        return self.log_sigma.exp()
     
-        return torch.exp(1j*(2*torch.pi/wl)*mask)
+    def forward(self, field: Tensor):
+
+        mask = self.mask * self.height
+        # self.mask = torch.clamp(self.mask, min=0) # height cannot be negative
+        # self.mask = torch.nn.functional.pad(self.mask, pad = ([self.padding]*4)) # to enable padding, need zeros at bounadry. OW random patterns stretched.
+
+        mask = mask*self.RI_PM + (mask.max() - mask)*self.n0
+        mask = CustomGaussianBlur(mask.unsqueeze(0).unsqueeze(0), self.sigma).squeeze()
+
+        return field*torch.exp(1j*(2*torch.pi/self.wl)*mask)
     
     def _init_random(self, prob: float = 0.5):
-        return torch.rand([self.nx, self.ny]) > prob    
+        return (torch.rand([self.num_x, self.num_y]) > prob).float()
     
     def get_num_tiles(self):
-        return (self.nx, self.ny)
-
-
-class _PhaseMask():
-    def __init__(self, side_length: Tensor, spatial_resolution: Tuple[float, float, float], 
-                 grid_shape: Tuple[float, float, float]):
-        
-        self.grid_size = grid_shape[:2]
-        self.tile_size_px = torch.ceil(side_length/spatial_resolution[0]).int()
-        self.nx, self.ny = torch.ceil(grid_shape[0]/self.tile_size_px).int(), torch.ceil(grid_shape[1]/self.tile_size_px).int()
-        
-        # self.height_map = None
-        
-    def forward(self, RI_pm: Tensor, wl: float, sigma: float = None, padding: int = 0, RI_bg: float = 1.):
-
-        assert hasattr(self, 'height_map'), "Create height map first."
-        
-        mask = self.height_map.repeat_interleave(self.tile_size_px, 0).repeat_interleave(self.tile_size_px, 1)[:self.grid_size[0], :self.grid_size[1]]
-        mask = torch.clamp(mask, min=0) # height cannot be negative
-        mask = torch.nn.functional.pad(mask, pad = ([padding]*4))
-        mask = mask*RI_pm + (mask.max() - mask)*RI_bg
-        
-        if sigma is not None:
-            kernel_size = 2*int(4.*sigma + 0.5) + 1
-            mask = GaussianBlur(kernel_size, sigma=sigma)(mask.unsqueeze(0)).squeeze()
+        return (self.num_x, self.num_y)
     
-        return torch.exp(1j*(2*torch.pi/wl)*mask)
+
+class CustomPhaseMask(nn.Module):
     
-    def create_height_map(self, height: Tensor, prob: float = 0.5, hmap_grad: bool = False, device: str = 'cpu'):
+    def __init__(self, wavelength: float, side_length: float, spacing: Tuple[float, float, float], 
+                 shape: Tuple[int, int, int], heightmap: Tensor, sigma: float, RI_PM: float, maxheight: float = 1e-6,
+                 RI_bg: float = 1.):
         
-        if height.dim() == 0 or height.dim() == 1:
-            self.height_map = self._init_random(prob=prob).float()*height
-        else:
-            assert height.size() == self.get_num_tiles(), f"Param height must be of shape {self.nx}x{self.ny}"
-            self.height_map = height
+        super().__init__()
         
-        if hmap_grad:
-            self.height_map.requires_grad = True
-        
-        if device == 'cuda':
-            assert torch.cuda.is_available(), "CUDA not available, switch to CPU."
-        
-        self.height_map.to(device)
+        self.wl = wavelength
+        self.Nx, self.Ny = shape[:2] # 100x100
+        self.tile_size_px = torch.ceil(torch.tensor(side_length/spacing[0])).int() # 25, sqaure cells in voxels
+        self.num_x, self.num_y = torch.ceil(shape[0]/self.tile_size_px).int(), torch.ceil(shape[1]/self.tile_size_px).int() # 16x16, number of tiles
+        self.RI_PM = RI_PM
+        self.max_height = maxheight
+
+        self.n0 = RI_bg
+        # if padding is not None:
+        #     self.PAD = torchvision.transforms.Pad(padding) 
+        #     self.padding = padding
+
+        self.heightmap = nn.Parameter(heightmap)
+        self.log_sigma = nn.Parameter(torch.log(torch.tensor(sigma)))
+
+        assert type(heightmap) == Tensor, "heightmap must be a Tensor"
+        assert heightmap.size() == self.get_num_tiles(), f"Param height must be of shape {self.num_x}x{self.num_y}"
     
-    def _init_random(self, prob: float = 0.5):
-        return torch.rand([self.nx, self.ny]) > prob    
+
+    @property
+    def sigma(self):
+        return self.log_sigma.exp()
+    
+    def forward(self, field: Tensor):
+        
+        mask = torch.clamp(self.heightmap, min=-1*self.max_height, max=self.max_height) # height cannot be negative
+        mask = mask.repeat_interleave(self.tile_size_px, 0).repeat_interleave(self.tile_size_px, 1)[:self.Nx, :self.Ny]
+        
+        # self.mask = torch.clamp(self.mask, min=0) # height cannot be negative
+        # self.mask = torch.nn.functional.pad(self.mask, pad = ([self.padding]*4)) # to enable padding, need zeros at bounadry. OW random patterns stretched.
+
+        mask = mask*self.RI_PM + (mask.max() - mask)*self.n0
+        mask = CustomGaussianBlur(mask.unsqueeze(0).unsqueeze(0), self.sigma).squeeze()
+
+        return field*torch.exp(1j*(2*torch.pi/self.wl)*mask)
     
     def get_num_tiles(self):
-        return (self.nx, self.ny)
+        return (self.num_x, self.num_y)
+
+
+def CustomGaussianBlur(field: Tensor, sigma: Tensor, channels: int = 1):
+    """
+    field: (N, C, H, W)
+    """
+    device = field.device
+    dtype = field.dtype
+
+    sigma = sigma.clamp(min=1e-4)
     
+    kernel_size = 2*int(4.*sigma + 0.5) + 1
+    radius = kernel_size // 2
+    coords = torch.arange(-radius, radius + 1, device=device, dtype=dtype)
+
+    # 1D Gaussian
+    kernel = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
+    kernel = kernel / kernel.sum()
+
+    # 2D Gaussian (separable outer product)
+    kernel2d = torch.outer(kernel, kernel)
+    kernel2d = kernel2d / kernel2d.sum()
+
+    # Depthwise convolution kernel
+    kernel2d = kernel2d.expand(
+        channels, 1, kernel_size, kernel_size
+    )
+
+    return F.conv2d(
+        field,
+        kernel2d,
+        padding=radius,
+        groups=channels,
+    )
 
 def _soft_step(x: Tensor, softness=1e-6): 
     return torch.sigmoid(x / softness)
@@ -105,15 +148,31 @@ if __name__=='__main__':
     from torch.optim import Adam
     from torch import nn
     
-    # functionality tested. Optim fails however.
-    pm_obj1 = PhaseMask(torch.tensor(5.), torch.tensor([1., 1., 1.]), 
-                       torch.tensor([100, 100, 100]), torch.tensor(10).float())
-    field1 = pm_obj1.forward(torch.tensor(1.3), torch.tensor(500e-9)).detach()
+    WL = 500e-9
+    SPACING = [100e-9, 100e-9, 100e-9]
+    SHAPE = [500, 500, 100]
+    NA = 0.9
+    DIST_PM_IM = 0.4e-3
+
+    TILE_LEN = 0.25e-6
+    PM_HEIGHT = 600e-9
+    PM_RI = 1.46
+    PM_SIG = 0.6
+
+    N_BG = 1.33
+    PAD = 512
+    FOC_PLANE_VAR = 0.1e-6
+
+    pm_obj1 = BinaryPhaseMask(WL, TILE_LEN, SPACING, SHAPE, PM_HEIGHT, PM_SIG, PM_RI)
+
+    tile_size_px = torch.ceil(torch.tensor(TILE_LEN/SPACING[0])).int() # 25, sqaure cells in voxels
+    num_tiles_x, num_tiles_y = torch.ceil(SHAPE[0]/tile_size_px).int(), torch.ceil(SHAPE[1]/tile_size_px).int() # 16x16, number of tiles
+    pm_obj2 = CustomPhaseMask(WL, TILE_LEN, SPACING, SHAPE, torch.rand(num_tiles_x, num_tiles_y).float()*1e-6, PM_SIG, PM_RI)
     
-    pm_obj2 = PhaseMask(torch.tensor(5.), torch.tensor([1., 1., 1.]), 
-                       torch.tensor([100, 100, 100]), (5*pm_obj1.map).detach(), binary=False)
-    
-    optimizer = Adam(pm_obj2.parameters(), lr=1e-3)
+    field = torch.ones(SHAPE[:2], dtype=torch.complex64)
+    gt_field = pm_obj1.forward(field).angle().detach()
+
+    optimizer = Adam(pm_obj2.parameters(), lr=1e-2)
     loss_fn = nn.MSELoss()
 
     losses = []
@@ -121,9 +180,12 @@ if __name__=='__main__':
     for i in range(500):
         optimizer.zero_grad()
         
-        field2 = pm_obj2.forward(torch.tensor(1.3), torch.tensor(500e-9))
-        loss = loss_fn(field1.angle(), field2.angle())
-        # print(loss.item())
+        field2 = pm_obj2.forward(field).angle()
+        if i == 0:
+            init_field = field2.detach()
+
+        loss = loss_fn(gt_field, field2)
+        print(loss.item())
         losses.append(loss.item())
         # heights.append(pm_obj2.height.detach().item())
         
@@ -139,11 +201,15 @@ if __name__=='__main__':
     # plt.plot(heights)
     # plt.show()
     
-    plt.imshow(field1.angle().detach())
-    plt.colorbar()
-    plt.show()
+    fig, axs = plt.subplots(1, 3, figsize=(16, 4))
     
-    plt.imshow(field2.angle().detach())
-    plt.colorbar()
+    cm0 = axs[0].imshow(init_field[20:40, 20:40], cmap='gray', vmax=3, vmin=-3)
+    cm1 = axs[1].imshow(field2.detach()[20:40, 20:40], cmap='gray', vmax=3, vmin=-3)
+    cm2 = axs[2].imshow(gt_field[20:40, 20:40], cmap='gray', vmax=3, vmin=-3)
+
+    plt.colorbar(cm0, ax=axs[0])
+    plt.colorbar(cm1, ax=axs[1])
+    plt.colorbar(cm2, ax=axs[2])
+
     plt.show()
     
