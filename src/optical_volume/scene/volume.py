@@ -1,47 +1,110 @@
 import torch
+import torch.nn.functional as F
+
 from torch import nn, Tensor
 from typing import Optional, Tuple, List
 
+from .utils import from_axis_angle, to_axis_angle, to_matrix
 
 class Grid(nn.Module):
-    def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], device: str='cpu'):
+    def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float]):
         super().__init__()
 
         self.nx, self.ny, self.nz = shape
         self.dx, self.dy, self.dz = spacing
 
-        x = torch.arange(self.nx, device=device) * self.dx
-        y = torch.arange(self.ny, device=device) * self.dy
-        z = torch.arange(self.nz, device=device) * self.dz
+        x = torch.arange(self.nx) * self.dx
+        y = torch.arange(self.ny) * self.dy
+        z = torch.arange(self.nz) * self.dz
 
-        X, Y, Z = torch.meshgrid(x, y, z, indexing="ij")
+        grid = torch.meshgrid(x, y, z, indexing="ij")
         
-        self.register_buffer('X', X)
-        self.register_buffer('Y', Y)
-        self.register_buffer('Z', Z)
+        self.register_buffer('grid', torch.stack(grid, dim=-1))
+        # self.register_buffer('grid', X)
+        # self.register_buffer('Y', Y)
+        # self.register_buffer('Z', Z)
 
 
-class Volume(Grid):
-    def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], n_bg: Tensor):
+class CollectionVolume(Grid):
+    def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], n_bg: float):
         super().__init__(shape, spacing)
    
-        self.register_buffer('n_bg', n_bg)
+        self.n_bg = n_bg
         self.shapes = nn.ModuleList()
         
     def add(self, shape: List):
         self.shapes.extend(shape)
 
     def forward(self):
-        field = torch.ones_like(self.X) * self.n_bg
+        field = torch.ones_like(self.grid[..., 0]) * self.n_bg
         for shape in self.shapes:
-            mask = shape(self)
-            field = field * (1 - mask) + shape.RI * mask
+            mask = shape(self.grid)
+            field = field * (1 - mask/shape.RI) + mask
 
         return field
+    
+
+class VoxelVolume(nn.Module):
+    def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], volume: Tensor = None, n0 = float,
+                 rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0., object_center: Tuple = None) -> None:
+        super().__init__()
+
+        self.shape = shape
+        self.spacing = spacing
+        self.n0 = n0
+
+        self.volume = torch.nn.Parameter(torch.ones(self.shape).float()*self.n0) if volume is None else self.set_volume(volume)
+        self.quat = torch.nn.Parameter(from_axis_angle(torch.tensor(rotation_axis).float(), 
+                                                       torch.deg2rad(torch.tensor(rotation_angle))))
+        self.center = torch.tensor(self.nx*self.dx/2, self.ny*self.dy/2, self.nz*self.dz/2) if object_center is None else torch.tensor(object_center)
+        # self.rot_position = torch.tensor(self.nx*self.dx/2, self.ny*self.dy/2, self.nz*self.dz/2) if rotation_center is None else torch.tensor(object_center)
+
+    def set_volume(self, volume: Tensor):
+
+        assert volume.shape == self.shape
+        self.volume = torch.nn.Parameter(volume.float())
+        
+        return self
+
+    def forward(self, grid: Tensor):
+
+        # Rotation matrix
+        R = to_matrix(self.q).squeeze()
+
+        pts = grid - self.center
+        pts = pts @ R.T
+        pts = pts + self.center
+
+        # normalize the points to the range [0, 1] for grid_sample
+        # pts_normalized = pts.clone()
+        pts_normalized[..., 0] = (pts[..., 0] / ((self.nx - 1) * self.dx)) * 2 - 1
+        pts_normalized[..., 1] = (pts[..., 1] / ((self.ny - 1) * self.dy)) * 2 - 1
+        pts_normalized[..., 2] = (pts[..., 2] / ((self.nz - 1) * self.dz)) * 2 - 1
+
+        # grid_sample expects the grid in the shape (N, D, H, W, 3), so we need to add a batch dimension
+        pts_normalized = pts_normalized.unsqueeze(0)
+
+        ri = self.ri_distibution.permute(2, 1, 0)
+
+        # Sample the RI distribution using grid_sample
+        sampled_ri = F.grid_sample(
+            ri.unsqueeze(0).unsqueeze(0),  # (N, C, D, H, W)
+            pts_normalized,
+            mode='bilinear',
+            padding_mode='border',
+            align_corners=True
+        )
+
+        return sampled_ri.squeeze()
+
+    def voxelize(self):
+        # if the input volume is not in voxels
+        pass
+
 
 
 if __name__ == '__main__':
-    from grid import Grid
+    # from grid import Grid
     from shapes import *
     from matplotlib import pyplot as plt
     

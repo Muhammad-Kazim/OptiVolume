@@ -2,9 +2,15 @@ import torch
 from torch import Tensor, nn
 from scipy.spatial.transform import Rotation as Rot
 
+from typing import Tuple
+
+from .utils import from_axis_angle, to_axis_angle, to_matrix
+
+# all shapes are voxel volumes of analytical objects
 
 class Sphere(nn.Module):
-    def __init__(self, center: Tensor, radius: Tensor, RI: Tensor, softness=1e-12):
+    def __init__(self, center: Tensor, radius: Tensor, RI: Tensor, softness=1e-12,
+                 rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
         super().__init__()
         
         self.center = nn.Parameter(center)
@@ -12,14 +18,25 @@ class Sphere(nn.Module):
         self.RI = nn.Parameter(RI)
         self.softness = softness
 
-    def forward(self, grid: Tensor):
-        cx, cy, cz = self.center
-        
-        X = grid.X - cx
-        Y = grid.Y - cy
-        Z = grid.Z - cz
+        q = from_axis_angle(torch.tensor(rotation_axis).float(), torch.deg2rad(torch.tensor(rotation_angle)))
+        self.quat = nn.Parameter(q)  
 
-        return 1 - _soft_step(X**2 + Y**2 + Z**2 - self.radius**2, self.softness)
+    def forward(self, grid: Tensor):
+
+        # Rotation Matrix
+        R = to_matrix(self.quat).squeeze()
+
+        # World -> object coordinates
+        pts = grid - self.center
+        pts = pts @ R
+
+        return self.RI * (1 - _soft_step(pts[..., 0]**2 + pts[..., 1]**2 + pts[..., 2]**2 - self.radius**2, self.softness))
+    
+    def set_quat(self, rotation_axis, rotation_angle):
+
+        q = from_axis_angle(torch.tensor(rotation_axis).float(), torch.deg2rad(torch.tensor(rotation_angle)))
+        self.quat = torch.nn.Parameter(q)
+        return self
 
 
 def make_spheres(centers: Tensor, radii: Tensor, RIs: Tensor, softness: float = 1e-12):
@@ -35,22 +52,29 @@ def make_spheres(centers: Tensor, radii: Tensor, RIs: Tensor, softness: float = 
             
             
 class Cube(nn.Module):
-    def __init__(self, center: Tensor, length: Tensor, RI: Tensor, rotation=None, softness=1e-9):
+    def __init__(self, center: Tensor, length: Tensor, RI: Tensor, softness=1e-9, 
+                 rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
         super().__init__()
         
         self.center = nn.Parameter(center)
         self.length = nn.Parameter(length)
         self.RI = nn.Parameter(RI)
-        
-        if rotation:
-            self.rotation = torch.tensor(Rot.random().as_matrix()).float()
-        else:
-            self.rotation = torch.eye(3).float()
+
+        q = from_axis_angle(torch.tensor(rotation_axis).float(), torch.deg2rad(torch.tensor(rotation_angle)))
+        self.quat = nn.Parameter(q)  
         
         self.softness = softness
 
     def forward(self, grid: Tensor):
-        cx, cy, cz = self.center
+
+        # Rotation Matrix
+        R = to_matrix(self.quat).squeeze()
+
+        # World -> object coordinates
+        pts = grid - self.center
+        pts = pts @ R
+
+        # cx, cy, cz = self.center
         
         if self.length.dim() > 0 and self.length.size()[0] > 1:
             sx = self.length[0]/2
@@ -59,19 +83,25 @@ class Cube(nn.Module):
         else:
             sx = sy = sz = self.length/2
             
-        X = grid.X - cx
-        Y = grid.Y - cy
-        Z = grid.Z - cz
+        # X = grid.X - cx
+        # Y = grid.Y - cy
+        # Z = grid.Z - cz
             
-        # Stack into vector form
-        coords = torch.stack([X, Y, Z], dim=-1)
-        rotated = torch.tensordot(coords, self.rotation, dims=([-1], [1]))  # (..., 3)
+        # # Stack into vector form
+        # coords = torch.stack([X, Y, Z], dim=-1)
+        # rotated = torch.tensordot(coords, self.rotation, dims=([-1], [1]))  # (..., 3)
         
-        mask_x = _soft_step(rotated[..., 0] + sx, softness=self.softness) * (1 - _soft_step(rotated[..., 0] - sx, softness=self.softness))
-        mask_y = _soft_step(rotated[..., 1] + sy, softness=self.softness) * (1 - _soft_step(rotated[..., 1] - sy, softness=self.softness))
-        mask_z = _soft_step(rotated[..., 2] + sz, softness=self.softness) * (1 - _soft_step(rotated[..., 2] - sz, softness=self.softness))
+        mask_x = _soft_step(pts[..., 0] + sx, softness=self.softness) * (1 - _soft_step(pts[..., 0] - sx, softness=self.softness))
+        mask_y = _soft_step(pts[..., 1] + sy, softness=self.softness) * (1 - _soft_step(pts[..., 1] - sy, softness=self.softness))
+        mask_z = _soft_step(pts[..., 2] + sz, softness=self.softness) * (1 - _soft_step(pts[..., 2] - sz, softness=self.softness))
 
-        return mask_x * mask_y * mask_z  # smooth transition between 0 and 1
+        return self.RI * (mask_x * mask_y * mask_z)  # smooth transition between 0 and 1
+    
+    def set_quat(self, rotation_axis, rotation_angle):
+
+        q = from_axis_angle(torch.tensor(rotation_axis).float(), torch.deg2rad(torch.tensor(rotation_angle)))
+        self.quat = torch.nn.Parameter(q)
+        return self
 
 
 def make_cubes(centers: Tensor, lengths: Tensor, RIs: Tensor, rotation: bool = False, softness: float = 1e-9):
@@ -87,39 +117,52 @@ def make_cubes(centers: Tensor, lengths: Tensor, RIs: Tensor, rotation: bool = F
 
             
 class Ellipsoid(nn.Module):
-    def __init__(self, center: Tensor, radii: Tensor, RI: Tensor, 
-                 rotation: bool = False, softness: float = 1e-12):
+    def __init__(self, center: Tensor, radii: Tensor, RI: Tensor, softness: float = 1e-12,
+                 rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
+                 
         super().__init__()
         
         self.center = nn.Parameter(center)
         self.radii = nn.Parameter(radii)
         self.RI = nn.Parameter(RI)
-        
-        if rotation:
-            self.rotation = torch.tensor(Rot.random().as_matrix()).float()
-        else:
-            self.rotation = torch.eye(3).float()
+
+        q = from_axis_angle(torch.tensor(rotation_axis).float(), torch.deg2rad(torch.tensor(rotation_angle)))
+        self.quat = nn.Parameter(q)
         
         self.softness = softness
     
     def forward(self, grid: Tensor):
-        cx, cy, cz = self.center
+
+        # Rotation Matrix
+        R = to_matrix(self.quat).squeeze()
+
+        # World -> object coordinates
+        pts = grid - self.center
+        pts = pts @ R
+
+        # cx, cy, cz = self.center
         rx, ry, rz = self.radii
         
-        X = grid.X - cx
-        Y = grid.Y - cy
-        Z = grid.Z - cz
+        # X = grid.X - cx
+        # Y = grid.Y - cy
+        # Z = grid.Z - cz
         
-        # Stack into vector form
-        coords = torch.stack([X, Y, Z], dim=-1)
-        rotated = torch.tensordot(coords, self.rotation, dims=([-1], [1]))  # (..., 3)
+        # # Stack into vector form
+        # coords = torch.stack([X, Y, Z], dim=-1)
+        # rotated = torch.tensordot(coords, self.rotation, dims=([-1], [1]))  # (..., 3)
 
         # Compute normalized squared distance
-        mask_x = (rotated[..., 0] / rx) ** 2
-        mask_y = (rotated[..., 1] / ry) ** 2
-        mask_z = (rotated[..., 2] / rz) ** 2
+        mask_x = (pts[..., 0] / rx) ** 2
+        mask_y = (pts[..., 1] / ry) ** 2
+        mask_z = (pts[..., 2] / rz) ** 2
 
-        return 1 - _soft_step(mask_x + mask_y + mask_z - 1, softness=self.softness)
+        return self.RI * (1 - _soft_step(mask_x + mask_y + mask_z - 1, softness=self.softness))
+    
+    def set_quat(self, rotation_axis, rotation_angle):
+
+        q = from_axis_angle(torch.tensor(rotation_axis).float(), torch.deg2rad(torch.tensor(rotation_angle)))
+        self.quat = torch.nn.Parameter(q)
+        return self
     
 
 def make_ellipsoids(centers: Tensor, radii: Tensor, RIs: Tensor, rotation: bool = False, softness: float = 1e-12):
@@ -143,13 +186,14 @@ class Plane(nn.Module):
             RI (float): RI of plane.
             thickness (float, optional): Thickness/2 on either halfspace.
     """
-    def __init__(self, point: Tensor, normal: Tensor, thickness: Tensor, softness: float = 1e-12):
+    def __init__(self, point: Tensor, normal: Tensor, thickness: Tensor, RI: float, softness: float = 1e-12):
         super().__init__()
         
         self.point = nn.Parameter(point)
         self.normal = nn.Parameter(normal)/torch.linalg.vector_norm(normal)
         self.thickness = nn.Parameter(thickness)
-        
+        self.RI = nn.Parameter(RI)
+
         self.softness = softness
     
     def forward(self, grid: Tensor):
@@ -164,7 +208,7 @@ class Plane(nn.Module):
         mask_p = self._soft_step(nx * X + ny * Y + nz * Z, softness=self.softness)
         mask_n = 1 - self._soft_step(nx * X + ny * Y + nz * Z - self.thickness, softness=self.softness)
         
-        return 1 - mask_p * mask_n
+        return self.RI * (1 - mask_p * mask_n)
     
     
 def add_plane(self, point: Tensor, normal: Tensor, RI: Tensor, thickness: Tensor = None, softness: float = 1e-9):
