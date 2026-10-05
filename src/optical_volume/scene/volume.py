@@ -61,30 +61,30 @@ class VoxelVolume(nn.Module):
 
     def set_volume(self, volume: Tensor):
 
-        assert volume.shape == self.shape
-        self.volume = torch.nn.Parameter(volume.float())
+        assert tuple(volume.shape) == tuple(self.shape)
+        volume = torch.nn.Parameter(volume.float())
         
-        return self
+        return volume
 
     def forward(self, grid: Tensor):
 
         # Rotation matrix
-        R = to_matrix(self.q).squeeze()
+        R = to_matrix(self.quat).squeeze()
 
         pts = grid - self.center
         pts = pts @ R.T
         pts = pts + self.center
 
         # normalize the points to the range [0, 1] for grid_sample
-        # pts_normalized = pts.clone()
-        pts_normalized[..., 0] = (pts[..., 0] / ((self.nx - 1) * self.dx)) * 2 - 1
-        pts_normalized[..., 1] = (pts[..., 1] / ((self.ny - 1) * self.dy)) * 2 - 1
-        pts_normalized[..., 2] = (pts[..., 2] / ((self.nz - 1) * self.dz)) * 2 - 1
+        pts_normalized = pts.clone()
+        pts_normalized[..., 0] = (pts[..., 0] / ((self.shape[0] - 1) * self.spacing[0])) * 2 - 1
+        pts_normalized[..., 1] = (pts[..., 1] / ((self.shape[1] - 1) * self.spacing[1])) * 2 - 1
+        pts_normalized[..., 2] = (pts[..., 2] / ((self.shape[2] - 1) * self.spacing[2])) * 2 - 1
 
         # grid_sample expects the grid in the shape (N, D, H, W, 3), so we need to add a batch dimension
         pts_normalized = pts_normalized.unsqueeze(0)
 
-        ri = self.ri_distibution.permute(2, 1, 0)
+        ri = self.volume.permute(2, 1, 0)
 
         # Sample the RI distribution using grid_sample
         sampled_ri = F.grid_sample(

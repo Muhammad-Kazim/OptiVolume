@@ -3,84 +3,54 @@ import sys
 import torch
 import torchvision
 from torchvision.transforms import GaussianBlur, Resize
-from py_wave_propagator import torch_volume_prop as propagator
+# from py_wave_propagator import torch_volume_prop as propagator
 
 from typing import Optional, Tuple, List
 from torch import nn, Tensor
 
-sys.path.insert(0, '/'.join(os.getcwd().split('/')[:-1]))
+# sys.path.insert(0, '/'.join(os.getcwd().split('/')[:-1]))
 
-import optics
-import scene
-import utils
+from optical_volume import optics
+from optical_volume import scene
+from optical_volume import utils
 
-from matplotlib import pyplot as plt
+class CodedPhaseCamV3(torch.nn.Module):
+    def __init__(self, wavelength: float, spacing: Tuple[float, float], shape: Tuple[int, int],
+                 padding: Optional[int] = 512, pad_mode: str = 'edge',softness=1e-12):
+        super().__init__()
+        # shape: img space
+        
+        # fixed sensor parameters
+        TILE_LEN = 12e-6
+        PM_HEIGHT = 570e-9
+        PM_RI = 1.46
+        PM_SIG = 1.1
+        DIST_PM_IM = 2.5e-3
+        DIGITAL_PX = 6e-6
+       
+        SUM_PATCH = int(DIGITAL_PX/spacing[0]) # spacing is image space sampling
+        
+        pm_obj = optics.BinaryPhaseMask(wavelength, TILE_LEN, spacing, shape, PM_HEIGHT, PM_SIG, PM_RI)
+        px_int_obj = optics.utils.PixelIntegrator(SUM_PATCH)
+        prop_img_space = optics.FreeSpacePropagator(wavelength, spacing, DIST_PM_IM, direction='backward', 
+                                                    padding=padding, pad_mode=pad_mode)
+        
 
-# example: functioning
-WL = 500e-9
-spacing = [100e-9, 100e-9, 100e-9]
-shape = [500, 500, 100]
-NA = 0.9
-DIST_PM_IM = 0.4e-3
-TILE_LEN = 0.25e-6
-PM_HEIGHT = 600e-9
-PM_RI = 1.3
-N_BG = torch.tensor(1.33)
-PAD = 512
-FOC_PLANE_VAR = 0.1e-6
-
-x = (torch.arange(shape[0]) - int(shape[0]/2))*spacing[0]
-X, Y = torch.meshgrid(x, x, indexing='ij')
-
-# wavefield = torch.where(X**2 + Y**2 < (10e-6)**2, 1+0j, 0+0j)
-
-lens = optics.lens.ObjImgMap(WL, spacing[:2], shape[:2])
-
-pm_obj = optics.phase_mask.PhaseMask(torch.tensor(TILE_LEN), spacing[:2], shape[:2], height=torch.tensor(PM_HEIGHT))
-mask = pm_obj.forward(PM_RI, WL, sigma=0.6)
-
-sphere1 = scene.shapes.Sphere(torch.tensor((20e-6, 35e-6, 4e-6)).float(), torch.tensor((5e-6)), torch.tensor(1.5), softness=1e-12)
-sphere2 = scene.shapes.Sphere(torch.tensor((20e-6, 10e-6, 5e-6)).float(), torch.tensor((3e-6)), torch.tensor(1.3), softness=1e-12)
-    
-grid = scene.grid.Grid(shape, spacing)
-vol = scene.volume.Volume(grid, N_BG) # volume should probably inherit from grid instead
-vol.add([sphere1, sphere2])
-
-vol_prop = optics.propagator.BeamPropMethod(WL, spacing, shape, padding=0)
-
-# plt.imshow(vol.forward()[:, :, 50].detach())
-# plt.colorbar()
-# plt.show()
-
-exit_field = vol_prop.forward(torch.ones([500, 500]).type(torch.complex64), vol.forward(), N_BG)
-    
-prop_obj_space = optics.propagator.Freespace(WL/N_BG, spacing[:2], shape[:2], padding=PAD)
-prop_img_space = optics.propagator.Freespace(WL, [x*20 for x in spacing[:2]], shape[:2], padding=PAD)
-
-cwfs_baisc = optics.system.OpticalSystem((
-        prop_obj_space.set_params(shape[2]*spacing[2]/2 - FOC_PLANE_VAR, direction='backward'), 
-        lens.low_pass_filter(NA), 
-        prop_img_space.set_params(dist=DIST_PM_IM, direction='backward'),
-        optics.utils.Modulator(mask),
-        prop_img_space.set_params(dist=DIST_PM_IM)
-    ))
-
-ref_field = cwfs_baisc(torch.ones([500, 500]).type(torch.complex64))
-cwfs_baisc.fields.clear()
-spn_field = cwfs_baisc(exit_field.type(torch.complex64))
-
-
-fig, axs = plt.subplots(1, 2, figsize=(15, 5))
-
-cm0 = axs[0].imshow(ref_field.abs().detach()**2, cmap='gray', vmin=0, vmax=5)
-plt.colorbar(cm0, ax=axs[0])
-
-cm1 = axs[1].imshow(spn_field.abs().detach()**2, cmap='gray', vmin=0, vmax=5)
-plt.colorbar(cm1, ax=axs[1])
-
-plt.show()
-
-print(cwfs_baisc.elements, len(cwfs_baisc.fields))
+        self.pcam_FM = optics.system.OpticalSystem((
+            prop_img_space, # prop to mask plane
+            pm_obj, # applying the mask
+            prop_img_space.set_direction('forward'), # prop to image plane
+            px_int_obj # add complex values incident on each pixel patch
+            ))
+        
+    def forward(self, field: Tensor):
+        # self.pcam_FM.to(field.get_device)
+        self.pcam_FM.fields.clear()
+        
+        field = self.pcam_FM(field)
+        intensity = field.abs()**2
+        
+        return intensity
 
 # opd = grad_unwrap(cwfs_baisc.fields[2])*2*torch.pi/WL
 # gradients = utils.grad_optr(opd)*scaling
@@ -208,4 +178,104 @@ print(cwfs_baisc.elements, len(cwfs_baisc.fields))
     
 
 if __name__=='__main__':
-    pass
+    from matplotlib import pyplot as plt
+    from tifffile import tifffile
+    
+    WL = 500e-9
+    OBJ_SPACING = [150e-9, 150e-9, 100e-9]
+    SHAPE = [600, 600, 100]
+    NA = 0.75
+    # DIST_PM_IM = 1.43e-3
+
+    # TILE_LEN = 12e-6
+    # PM_HEIGHT = 200e-9
+    # PM_RI = 1.46
+    # PM_SIG = 0.3
+
+    N_BG = 1.51
+    PAD = 512
+    PAD_MODE = 'edge'
+    FOC_PLANE_VAR = 0.1e-8
+
+    MAG = 40
+    OBJ_IMG_FACTOR = 20
+    EFF_MAG = int(40/OBJ_IMG_FACTOR)
+
+    IMG_SPACING = [OBJ_SPACING[i]*OBJ_IMG_FACTOR for i in range(2)]
+    IMG_SHAPE = [x*EFF_MAG for x in SHAPE]
+
+    DEVICE = 'cpu'
+
+
+    sphere1 = scene.shapes.Sphere(torch.tensor((20e-6, 45e-6, 3e-6)).float(), torch.tensor((5e-6)), torch.tensor(1.46), softness=1e-12)
+    sphere2 = scene.shapes.Sphere(torch.tensor((30e-6, 20e-6, 5e-6)).float(), torch.tensor((3e-6)), torch.tensor(1.46), softness=1e-12)
+        
+    vol = scene.CollectionVolume(SHAPE, OBJ_SPACING, N_BG)
+    vol.add([sphere1, sphere2])
+
+    vol_prop = optics.VolumePropagator(WL, OBJ_SPACING, N_BG)
+    
+    # vol_prop.set_source_field(100*torch.ones([SHAPE[0], SHAPE[1]], dtype=torch.complex64, device=DEVICE))
+
+    # plt.imshow(vol.forward()[:, :, 50].detach())
+    # plt.colorbar()
+    # plt.show()
+
+    psc_approx = optics.utils.GaussBlur(defocus_dist=FOC_PLANE_VAR)
+    mag_obj = optics.utils.Magnification(torch.tensor(MAG/OBJ_IMG_FACTOR))
+    lens = optics.F4ImagingSystem(WL, [x/EFF_MAG for x in OBJ_SPACING], IMG_SHAPE, NA)
+
+    prop_obj_space = optics.FreeSpacePropagator(WL/N_BG, OBJ_SPACING[:2], SHAPE[2]*OBJ_SPACING[2]/2 - FOC_PLANE_VAR, direction='backward', padding=PAD)
+
+    phase_camera = CodedPhaseCamV3(wavelength=WL, spacing=IMG_SPACING, shape=IMG_SHAPE, padding=PAD, pad_mode=PAD_MODE)
+
+    image_formation = optics.system.OpticalSystem((
+            prop_obj_space, # centring + displacing focus plalne
+            psc_approx,
+            mag_obj, # magnified by MAG/OBJ_IMG_FACTOR
+            lens, # imaging the wavefield
+            phase_camera
+        ))
+
+
+    vol.to(DEVICE)
+    image_formation.to(DEVICE)
+
+    exit_field = vol_prop.forward(vol.forward())
+
+    img_ref = image_formation(torch.ones(SHAPE[:2]).type(torch.complex64).to(DEVICE)).detach().to('cpu')
+    
+    image_formation.fields.clear()
+    img_spn = image_formation(exit_field.type(torch.complex64)).detach().to('cpu')
+    
+    
+    fig, axs = plt.subplots(1, 2, figsize=(15, 5))
+
+    cm0 = axs[0].imshow(img_ref/img_ref.max(), cmap='gray', vmin=0)
+    plt.colorbar(cm0, ax=axs[0])
+
+    cm1 = axs[1].imshow(img_spn/img_ref.max(), cmap='gray', vmin=0)
+    plt.colorbar(cm1, ax=axs[1])
+
+    plt.show()
+
+    im_real = torch.tensor(tifffile.imread('/home/syedkazim/sciebo - Kazim, Syed Muhammad (u491036@uni-siegen.de)@uni-siegen.sciebo.de/Lab/Projects/2024_Phase_Camera_FM_Design/phase camera/phase_camera_hardware/2026_09_24_PCam_3-1/Image__2026-09-25__09-59-27.tiff')).float()[:1000, :1000]
+
+    plt.hist((img_spn/img_ref.max()).reshape(-1), bins=25, label='Sim', alpha=0.7)
+    plt.hist((im_real/im_real.max()).reshape(-1), bins=25, label='Real', alpha=0.7)
+    plt.legend()
+    plt.show()
+
+    fig, axs = plt.subplots(1, 2, figsize=(15, 5))
+
+    cm0 = axs[0].imshow(torch.log10(torch.fft.fftshift(torch.fft.fft2(im_real/im_real.max())).abs()), cmap='gray')
+    plt.colorbar(cm0, ax=axs[0])
+
+    padded_int = torch.nn.functional.pad(img_ref[350:850, 350:850]/img_ref.max(), [250]*4, "constant", 0)
+    spectrum = torch.fft.fftshift(torch.fft.fft2(padded_int)).abs()
+
+    cm1 = axs[1].imshow(torch.log10(spectrum), cmap='gray')
+    plt.colorbar(cm1, ax=axs[1])
+
+    plt.show()
+    
