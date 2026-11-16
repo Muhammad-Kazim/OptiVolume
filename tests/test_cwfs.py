@@ -33,7 +33,7 @@ def test_cwfs_mask_plane():
     with torch.no_grad():
         mask.height.zero_()
         img = cam(field)
-        direct = cam.pcam_FM.elements[3](field).abs() ** 2
+        direct = optics.utils.PixelIntegrator(4)(field.abs() ** 2)
     torch.testing.assert_close(img, direct, rtol=1e-4, atol=1e-4 * direct.max().item())
 
 
@@ -46,3 +46,16 @@ def test_cwfs_distance_shared():
     optimizer.step()
     assert to_mask.distance.item() != DIST
     assert to_sensor.distance.item() == to_mask.distance.item()
+
+
+def test_cwfs_integrate_option():
+    field = _field(1)
+    with torch.no_grad():
+        for mode in ("intensity", "field"):
+            cam = pipelines.CodedPhaseCamV3(wavelength=WL, spacing=SPACING, shape=(64, 64),
+                                            padding=None, integrate=mode)
+            to_mask, mask, to_sensor = cam.pcam_FM.elements[:3]
+            at_sensor = to_sensor(mask(to_mask(field)))
+            pix = optics.utils.PixelIntegrator(4)
+            expected = pix(at_sensor.abs() ** 2) if mode == "intensity" else pix(at_sensor).abs() ** 2
+            torch.testing.assert_close(cam(field), expected, rtol=1e-4, atol=1e-4 * expected.max().item())
