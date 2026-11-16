@@ -80,7 +80,7 @@ intensity.mean().backward()
 print(bead.radius.grad)
 ```
 
-See `examples/` for coded wavefront sensing, object rotation, loading 3D models and optimisation.
+See `examples/` for coded wavefront sensing, object rotation, loading 3D models and a time series of microbeads.
 
 ## Package layout
 
