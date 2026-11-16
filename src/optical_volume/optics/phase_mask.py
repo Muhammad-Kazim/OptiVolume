@@ -6,14 +6,16 @@ from typing import Optional, Tuple
 from torch import nn, Tensor
 import torch.nn.functional as F
 
+from .utils import samples_per
+
 
 def _tile_layout(side_length: float, spacing, shape):
     """Tile size in pixels and number of tiles, per axis.
 
-    Returns ``((tile_x, tile_y), (num_x, num_y))``. The ratio is rounded up in float32,
-    as before, so existing results stay identical; A8 (CS4) revisits the rounding.
+    Returns ``((tile_x, tile_y), (num_x, num_y))``. Tile sizes are rounded to the nearest
+    whole number of samples, with a warning if the tile doesn't fit the grid.
     """
-    tile = tuple(int(torch.ceil(torch.tensor(side_length / d))) for d in spacing[:2])
+    tile = tuple(samples_per(side_length, d, "tile size") for d in spacing[:2])
     num = tuple(math.ceil(n / t) for n, t in zip(shape[:2], tile))
     return tile, num
 

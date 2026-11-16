@@ -1,8 +1,35 @@
+import warnings
+
 import torch
 from torch import nn, Tensor
 import torchvision
 from torchvision.transforms.functional import resize
 from torchvision.transforms import GaussianBlur
+
+
+def samples_per(length: float, spacing: float, what: str = "length") -> int:
+    """Number of grid samples spanned by ``length``, rounded to the nearest integer.
+
+    Parameters
+    ----------
+    length : float
+        Physical length in metres (a tile, a pixel, ...).
+    spacing : float
+        Grid spacing in metres.
+    what : str
+        Name used in the warning.
+
+    Warns
+    -----
+    UserWarning
+        If ``length / spacing`` is not within 1e-6 of a whole number.
+    """
+    ratio = length / spacing
+    n = max(1, round(ratio))
+    if abs(ratio - n) > 1e-6 * max(ratio, 1.0):
+        warnings.warn(f"{what} {length:g} m is {ratio:.4f} samples of {spacing:g} m; using {n}",
+                      stacklevel=2)
+    return n
 
 
 class Modulator(nn.Module):

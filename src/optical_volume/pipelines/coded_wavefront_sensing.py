@@ -21,7 +21,7 @@ class CodedPhaseCamV3(torch.nn.Module):
         DIST_PM_IM = 2.5e-3
         DIGITAL_PX = 6e-6
 
-        SUM_PATCH = int(DIGITAL_PX/spacing[0]) # spacing is image space sampling
+        SUM_PATCH = optics.utils.samples_per(DIGITAL_PX, spacing[0], "sensor pixel") # spacing is image space sampling
 
         pm_obj = optics.BinaryPhaseMask(wavelength, TILE_LEN, spacing, shape, PM_HEIGHT, PM_SIG, PM_RI)
         px_int_obj = optics.utils.PixelIntegrator(SUM_PATCH)
