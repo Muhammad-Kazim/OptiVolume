@@ -47,8 +47,10 @@ def _v5_cwfs_chain():
     probe = optics.BinaryPhaseMask(*mask_args)  # only to read the tile count
     mask = optics.BinaryPhaseMask(*mask_args, tile_map=_tile_map(*probe.get_num_tiles()))
 
-    # The same instance twice, as in v5 (this is bug A1, pinned on purpose).
-    prop_img_space = optics.FreeSpacePropagator(WL, img_spacing, 1.43e-3, direction="backward", padding=PAD)
+    # Back to the mask, then forward to the sensor, with one shared distance (A1 fixed).
+    prop_to_mask = optics.FreeSpacePropagator(WL, img_spacing, 1.43e-3, direction="backward", padding=PAD)
+    prop_to_sensor = optics.FreeSpacePropagator(WL, img_spacing, 1.43e-3, direction="forward", padding=PAD)
+    prop_to_sensor.distance = prop_to_mask.distance
     return optics.OpticalSystem((
         optics.FreeSpacePropagator(
             WL / N_BG, OBJ_SPACING[:2], OBJ_SHAPE[2] * OBJ_SPACING[2] / 2 - 1e-9,
@@ -56,9 +58,9 @@ def _v5_cwfs_chain():
         ),
         optics.F4ImagingSystem(WL, OBJ_SPACING, OBJ_SHAPE, NA=0.7),
         optics.utils.Magnification(torch.tensor(mag / obj_img_factor)),
-        prop_img_space,
+        prop_to_mask,
         mask,
-        prop_img_space.set_direction("forward"),
+        prop_to_sensor,
         optics.utils.PixelIntegrator(int(6e-6 / img_spacing[0])),
     ))
 
@@ -84,7 +86,11 @@ def test_char_coded_phase_cam(golden):
     pm = cam.pcam_FM.elements[1]
     # Replace the randomly drawn map with the deterministic pattern.
     pm.tile_map.copy_(_tile_map(*pm.get_num_tiles()))
+    # A smooth phase bump, not a plane wave: a plane wave only picks up a global phase under
+    # propagation, so its image can't reveal where the mask or sensor sit.
+    i, j = torch.meshgrid(torch.arange(64.), torch.arange(64.), indexing="ij")
+    field = torch.exp(1j * 2.0 * torch.exp(-((i - 30) ** 2 + (j - 36) ** 2) / (2 * 8.0 ** 2)))
     with torch.no_grad():
-        img = cam(torch.ones(64, 64, dtype=torch.complex64))
+        img = cam(field.to(torch.complex64))
     assert img.shape == (16, 16)
     golden("coded_phase_cam", img=img.numpy())

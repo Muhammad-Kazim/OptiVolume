@@ -10,5 +10,6 @@ Run with `pytest -q` (in the `optical_volume` conda env).
 - `test_shapes.py`: shape factories with rotations, in-place `set_quat`.
 - `test_volume.py`: `VoxelVolume` defaults (centre, required `n0`).
 - `test_phase_mask.py`: seeded phase-mask tile maps and their `state_dict` round trip.
+- `test_cwfs.py`: `CodedPhaseCamV3` mask plane and shared propagation distance.
 - `test_device.py`: `.to()` moves every tensor a module owns; CUDA vs CPU when a GPU is present.
 - `fixtures/`: stored reference data for the tests (see `fixtures/README.md`).
