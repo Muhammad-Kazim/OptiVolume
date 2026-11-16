@@ -6,13 +6,25 @@ from torchvision.transforms import GaussianBlur
 
 
 class Modulator(nn.Module):
+    """Multiply the field by a fixed or trainable transmission function.
+
+    Parameters
+    ----------
+    operator : Tensor
+        Complex or real transmission, broadcastable to the field ``(..., H, W)``.
+        Stored as a buffer, or as a parameter if it already is one or ``trainable=True``.
+    trainable : bool
+        Register ``operator`` as an ``nn.Parameter``.
     """
-    Makes transmission functions compatible with system.OpticalSystem module.
-    """
-    def __init__(self, operator):
+    def __init__(self, operator: Tensor, trainable: bool = False):
         super().__init__()
 
-        self.operator = operator
+        if isinstance(operator, nn.Parameter):
+            self.operator = operator  # keep the caller's parameter (and its optimizer)
+        elif trainable:
+            self.operator = nn.Parameter(torch.as_tensor(operator))
+        else:
+            self.register_buffer('operator', torch.as_tensor(operator))
 
     def forward(self, field):
         return self.operator*field

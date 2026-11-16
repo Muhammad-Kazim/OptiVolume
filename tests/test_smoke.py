@@ -68,7 +68,7 @@ def test_optical_system_chain():
         optics.FreeSpacePropagator(WL, SPACING[:2], 10e-6),
         optics.F4ImagingSystem(WL, SPACING[:2], SHAPE[:2], NA=0.5),
         optics.utils.PixelIntegrator(2),
-    ))
+    ), record=True)
     out = system(torch.ones(SHAPE[:2], dtype=torch.complex64))
     assert out.shape == (SHAPE[0] // 2, SHAPE[1] // 2)
     assert len(system.fields) == 3

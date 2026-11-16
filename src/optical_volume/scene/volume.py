@@ -42,18 +42,51 @@ class CollectionVolume(Grid):
 
 
 class VoxelVolume(nn.Module):
-    def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], volume: Tensor = None, n0 = float,
-                 rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0., object_center: Tuple = None) -> None:
+    """Refractive-index voxel array, rotatable and sampled onto any grid.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        ``(nx, ny, nz)`` voxels of the object box.
+    spacing : tuple of float
+        Voxel size ``(dx, dy, dz)`` in metres. Voxel ``(i, j, k)`` sits at
+        ``(i*dx, j*dy, k*dz)``.
+    volume : Tensor, optional
+        Refractive indices of shape ``shape``. Default: filled with ``n0``.
+    n0 : float
+        Background refractive index of the medium around the object (keyword only,
+        required). Fills an empty volume.
+    rotation_axis : tuple of float
+        Rotation axis ``(3,)``.
+    rotation_angle : float
+        Rotation angle in degrees.
+    object_center : tuple of float, optional
+        Rotation centre in metres. Default: the centre of the voxel box,
+        ``((nx-1)*dx/2, (ny-1)*dy/2, (nz-1)*dz/2)``.
+
+    Notes
+    -----
+    ``forward(grid)`` samples the rotated volume at the points ``grid (..., 3)`` (metres)
+    with trilinear interpolation. Points outside the box currently take the value of the
+    nearest edge voxel (``padding_mode='border'``).
+    """
+
+    def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], volume: Tensor = None,
+                 *, n0: float, rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.,
+                 object_center: Tuple = None) -> None:
         super().__init__()
 
-        self.shape = shape
-        self.spacing = spacing
+        self.shape = tuple(shape)
+        self.spacing = tuple(spacing)
         self.n0 = n0
 
         self.volume = torch.nn.Parameter(torch.ones(self.shape).float()*self.n0) if volume is None else self.set_volume(volume)
         self.quat = torch.nn.Parameter(from_axis_angle(torch.tensor(rotation_axis).float(), 
                                                        torch.deg2rad(torch.tensor(rotation_angle))))
-        self.center = torch.tensor(self.nx*self.dx/2, self.ny*self.dy/2, self.nz*self.dz/2) if object_center is None else torch.tensor(object_center)
+        if object_center is None:
+            # Samples sit at 0..(n-1)*d, so this is the middle of the box that forward normalises to.
+            object_center = [(n - 1) * d / 2 for n, d in zip(self.shape, self.spacing)]
+        self.register_buffer('center', torch.as_tensor(object_center, dtype=torch.float32))
 
     def set_volume(self, volume: Tensor):
 

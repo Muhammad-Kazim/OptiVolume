@@ -45,7 +45,7 @@ def _v5_cwfs_chain():
     mask_args = (WL, 12e-6, img_spacing, img_shape, 100e-9, 0.6, 1.46)
 
     probe = optics.BinaryPhaseMask(*mask_args)  # only to read the tile count
-    mask = optics.BinaryPhaseMask(*mask_args, map=_tile_map(*probe.get_num_tiles()))
+    mask = optics.BinaryPhaseMask(*mask_args, tile_map=_tile_map(*probe.get_num_tiles()))
 
     # The same instance twice, as in v5 (this is bug A1, pinned on purpose).
     prop_img_space = optics.FreeSpacePropagator(WL, img_spacing, 1.43e-3, direction="backward", padding=PAD)
@@ -82,10 +82,8 @@ def test_char_bpm_sphere(golden):
 def test_char_coded_phase_cam(golden):
     cam = pipelines.CodedPhaseCamV3(wavelength=WL, spacing=(1.5e-6, 1.5e-6), shape=(64, 64), padding=16)
     pm = cam.pcam_FM.elements[1]
-    # Replace the randomly drawn mask with the deterministic pattern, expanded the same way.
-    tiles = _tile_map(*pm.get_num_tiles())
-    expanded = tiles.repeat_interleave(pm.tile_size_px, 0).repeat_interleave(pm.tile_size_px, 1)
-    pm.mask.copy_(expanded[: pm.Nx, : pm.Ny])
+    # Replace the randomly drawn map with the deterministic pattern.
+    pm.tile_map.copy_(_tile_map(*pm.get_num_tiles()))
     with torch.no_grad():
         img = cam(torch.ones(64, 64, dtype=torch.complex64))
     assert img.shape == (16, 16)
