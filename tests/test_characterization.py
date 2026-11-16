@@ -47,8 +47,10 @@ def _v5_cwfs_chain():
     probe = optics.BinaryPhaseMask(*mask_args)  # only to read the tile count
     mask = optics.BinaryPhaseMask(*mask_args, tile_map=_tile_map(*probe.get_num_tiles()))
 
-    # The same instance twice, as in v5 (this is bug A1, pinned on purpose).
-    prop_img_space = optics.FreeSpacePropagator(WL, img_spacing, 1.43e-3, direction="backward", padding=PAD)
+    # Back to the mask, then forward to the sensor, with one shared distance (A1 fixed).
+    prop_to_mask = optics.FreeSpacePropagator(WL, img_spacing, 1.43e-3, direction="backward", padding=PAD)
+    prop_to_sensor = optics.FreeSpacePropagator(WL, img_spacing, 1.43e-3, direction="forward", padding=PAD)
+    prop_to_sensor.distance = prop_to_mask.distance
     return optics.OpticalSystem((
         optics.FreeSpacePropagator(
             WL / N_BG, OBJ_SPACING[:2], OBJ_SHAPE[2] * OBJ_SPACING[2] / 2 - 1e-9,
@@ -56,9 +58,9 @@ def _v5_cwfs_chain():
         ),
         optics.F4ImagingSystem(WL, OBJ_SPACING, OBJ_SHAPE, NA=0.7),
         optics.utils.Magnification(torch.tensor(mag / obj_img_factor)),
-        prop_img_space,
+        prop_to_mask,
         mask,
-        prop_img_space.set_direction("forward"),
+        prop_to_sensor,
         optics.utils.PixelIntegrator(int(6e-6 / img_spacing[0])),
     ))
 

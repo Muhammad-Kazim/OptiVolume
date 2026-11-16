@@ -25,13 +25,19 @@ class CodedPhaseCamV3(torch.nn.Module):
 
         pm_obj = optics.BinaryPhaseMask(wavelength, TILE_LEN, spacing, shape, PM_HEIGHT, PM_SIG, PM_RI)
         px_int_obj = optics.utils.PixelIntegrator(SUM_PATCH)
-        prop_img_space = optics.FreeSpacePropagator(wavelength, spacing, DIST_PM_IM, direction='backward', 
+        # The sensor sits at the image plane and the mask DIST_PM_IM in front of it: propagate
+        # back to the mask, modulate, propagate forward again. Two propagators share one
+        # distance Parameter, so training it moves the mask as one physical distance.
+        prop_to_mask = optics.FreeSpacePropagator(wavelength, spacing, DIST_PM_IM, direction='backward',
+                                                  padding=padding, pad_mode=pad_mode)
+        prop_to_sensor = optics.FreeSpacePropagator(wavelength, spacing, DIST_PM_IM, direction='forward',
                                                     padding=padding, pad_mode=pad_mode)
+        prop_to_sensor.distance = prop_to_mask.distance
 
         self.pcam_FM = optics.system.OpticalSystem((
-            prop_img_space, # prop to mask plane
+            prop_to_mask, # image plane -> mask plane
             pm_obj, # applying the mask
-            prop_img_space.set_direction('forward'), # prop to image plane
+            prop_to_sensor, # mask plane -> sensor (image plane)
             px_int_obj # add complex values incident on each pixel patch
             ))
 
