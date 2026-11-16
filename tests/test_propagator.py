@@ -72,3 +72,27 @@ def test_volume_propagator_source_argument():
     bpm.set_source_field(_random_field(16, 16))
     with pytest.raises(ValueError, match="lateral shape"):
         bpm(_random_volume(8, 8, 4))
+
+
+def _grating(period, n=64, dx=100e-9):
+    x = torch.arange(n) * dx
+    return torch.exp(1j * 2 * math.pi * x / period)[:, None].expand(n, n).to(torch.complex64)
+
+
+def test_evanescent_suppressed():
+    # lambda = 500 nm, dx = 100 nm: a 200 nm grating is evanescent, a 1.6 um grating propagates.
+    fine, coarse = _grating(200e-9), _grating(1.6e-6)
+    free = optics.FreeSpacePropagator(WL, (100e-9, 100e-9), 1e-6)
+    assert free(fine).abs().max() < 1e-4  # was 1 before A3; float32 rounding leaves ~1e-5
+    torch.testing.assert_close(free(coarse).abs(), coarse.abs(), rtol=1e-4, atol=1e-4)
+
+    # 'decay': exp(-kappa*d) forward; removed (not amplified) for d < 0.
+    decay = optics.FreeSpacePropagator(WL, (100e-9, 100e-9), 20e-9, evanescent="decay")
+    kappa = 2 * math.pi * math.sqrt(1 / 200e-9**2 - 1 / WL**2)
+    assert decay(fine).abs().mean().item() == pytest.approx(math.exp(-kappa * 20e-9), rel=1e-3)
+    decay.distance.data.fill_(-20e-9)
+    decay.set_direction("forward")
+    assert decay(fine).abs().max() < 1e-4
+
+    with pytest.raises(ValueError):
+        optics.FreeSpacePropagator(WL, (100e-9, 100e-9), 1e-6, evanescent="keep")

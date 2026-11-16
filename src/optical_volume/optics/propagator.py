@@ -22,6 +22,57 @@ def _crop(field: Tensor, p: int) -> Tensor:
     return field[..., p:H - p, p:W - p]
 
 
+_EVANESCENT_MODES = ("zero", "decay")
+
+
+def _transfer_function(shape, spacing, k, distance, evanescent: str, device) -> Tensor:
+    """Angular-spectrum transfer function ``H(kx, ky)`` for propagation over ``distance``.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        Field size ``(H, W)`` in pixels (after padding).
+    spacing : tuple of float
+        Sampling ``(dx, dy)`` in metres.
+    k : float
+        Wavenumber in the medium, ``2*pi*n/wavelength``, in 1/m.
+    distance : float or Tensor
+        Propagation distance in metres.
+    evanescent : {'zero', 'decay'}
+        ``'zero'``: components with ``kx**2 + ky**2 >= k**2`` are removed (stable in both
+        directions). ``'decay'``: they decay as ``exp(-kappa*d)``, the exact solution for
+        ``d >= 0``; for ``d < 0`` they are removed, since growth would be unbounded.
+
+    Returns
+    -------
+    Tensor
+        Complex ``(H, W)`` transfer function, in FFT (unshifted) order.
+    """
+    H, W = shape
+    dx, dy = spacing
+    kx = torch.fft.fftfreq(H, dx, device=device) * 2 * torch.pi
+    ky = torch.fft.fftfreq(W, dy, device=device) * 2 * torch.pi
+    Kx, Ky = torch.meshgrid(kx, ky, indexing='ij')
+
+    kz2 = k**2 - Kx**2 - Ky**2
+    propagating = kz2 > 0
+    kz = torch.sqrt(torch.clamp(kz2, min=0))
+    transfer = torch.exp(1j * kz * distance)
+
+    if evanescent == "zero":
+        return torch.where(propagating, transfer, torch.zeros_like(transfer))
+    kappa = torch.sqrt(torch.clamp(-kz2, min=0))
+    decay = torch.where(torch.as_tensor(distance, device=device) >= 0,
+                        torch.exp(-kappa * distance), torch.zeros_like(kappa))
+    return torch.where(propagating, transfer, decay.to(transfer.dtype))
+
+
+def _check_evanescent(evanescent: str) -> str:
+    if evanescent not in _EVANESCENT_MODES:
+        raise ValueError(f"evanescent must be one of {_EVANESCENT_MODES}, got {evanescent!r}")
+    return evanescent
+
+
 class FreeSpacePropagator(nn.Module):
     """Angular-spectrum propagation through a homogeneous medium.
 
@@ -40,6 +91,9 @@ class FreeSpacePropagator(nn.Module):
         means no padding.
     pad_mode : str
         torchvision padding mode, ``'edge'`` by default.
+    evanescent : {'zero', 'decay'}
+        Treatment of evanescent components (``kx**2 + ky**2 >= k**2``). ``'zero'`` (default)
+        removes them, which is stable for both directions.
 
     Notes
     -----
@@ -54,9 +108,11 @@ class FreeSpacePropagator(nn.Module):
               direction: Optional[str] = 'forward',
               padding: Optional[int] = None,
               pad_mode: str = 'edge',
+              evanescent: str = 'zero',
     ) -> None:
         super().__init__()
 
+        self.evanescent = _check_evanescent(evanescent)
         self.PAD = _make_pad(padding, pad_mode)
         self.pad_by = int(padding) if self.PAD is not None else 0
 
@@ -73,22 +129,13 @@ class FreeSpacePropagator(nn.Module):
         if self.PAD is not None:
             field = _pad_complex(self.PAD, field)
 
-        H, W = field.shape[-2:]
-
-        # Spatial frequency grid
-        kx = torch.fft.fftfreq(H, self.dx, device=device) * 2 * torch.pi
-        ky = torch.fft.fftfreq(W, self.dy, device=device) * 2 * torch.pi
-        Kx, Ky = torch.meshgrid(kx, ky, indexing='ij')
-
-        Kz = (2 * torch.pi/self.wavelength)**2 - Kx**2 - Ky**2
-        mask = torch.sigmoid(Kz/1e-12) # to remove negatives which remove evanascent waves
-        Kz = torch.sqrt(Kz*mask)
+        transfer_function = _transfer_function(field.shape[-2:], (self.dx, self.dy),
+                                               2 * torch.pi / self.wavelength, self.distance,
+                                               self.evanescent, device)
+        if (self.direction == 'backward' and self.distance > 0.) or (self.direction == 'forward' and self.distance < 0.):
+            transfer_function = torch.conj(transfer_function)
 
         field_fft = torch.fft.fft2(field)
-        if (self.direction == 'backward' and self.distance > 0.) or (self.direction == 'forward' and self.distance < 0.):
-            transfer_function = torch.conj(torch.exp(1j*Kz*self.distance))
-        else:
-            transfer_function = torch.exp(1j*Kz*self.distance)
 
         field = torch.fft.ifft2(field_fft * transfer_function)
 
@@ -119,6 +166,9 @@ class VolumePropagator(nn.Module):
         output. ``None`` or 0 means no padding.
     pad_mode : str
         torchvision padding mode, ``'edge'`` by default.
+    evanescent : {'zero', 'decay'}
+        Treatment of evanescent components. ``'decay'`` (default) applies ``exp(-kappa*dz)``
+        per slice, which matters because ``dz`` is shorter than the wavelength.
 
     Notes
     -----
@@ -135,10 +185,12 @@ class VolumePropagator(nn.Module):
         spacing: Tuple[float, float, float],
         RI_background: float,
         padding: Optional[int] = None,
-        pad_mode: str = 'edge'
+        pad_mode: str = 'edge',
+        evanescent: str = 'decay',
     ) -> None:
         super().__init__()
 
+        self.evanescent = _check_evanescent(evanescent)
         self.PAD = _make_pad(padding, pad_mode)
         self.pad_by = int(padding) if self.PAD is not None else 0
 
@@ -167,15 +219,10 @@ class VolumePropagator(nn.Module):
         else:
             field = source.clone()
 
-        # Spatial frequency grid, built for the padded field
-        H, W = field.shape[-2:]
+        # Transfer function for one slice, built for the padded field
         k0 = 2 * torch.pi / self.wavelength
-        kx = torch.fft.fftfreq(H, self.dx, device=device) * 2 * torch.pi
-        ky = torch.fft.fftfreq(W, self.dy, device=device) * 2 * torch.pi
-        Kx, Ky = torch.meshgrid(kx, ky, indexing='ij')
-
-        Kz = torch.sqrt(0j + (self.n0*k0)**2 - Kx**2 - Ky**2)
-        transfer_function = torch.exp(1j*Kz*self.dz)
+        transfer_function = _transfer_function(field.shape[-2:], (self.dx, self.dy), self.n0 * k0,
+                                               self.dz, self.evanescent, device)
 
         # Forward propagation
         for z in range(Nz):
