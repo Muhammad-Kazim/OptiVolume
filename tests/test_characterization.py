@@ -84,7 +84,11 @@ def test_char_coded_phase_cam(golden):
     pm = cam.pcam_FM.elements[1]
     # Replace the randomly drawn map with the deterministic pattern.
     pm.tile_map.copy_(_tile_map(*pm.get_num_tiles()))
+    # A smooth phase bump, not a plane wave: a plane wave only picks up a global phase under
+    # propagation, so its image can't reveal where the mask or sensor sit.
+    i, j = torch.meshgrid(torch.arange(64.), torch.arange(64.), indexing="ij")
+    field = torch.exp(1j * 2.0 * torch.exp(-((i - 30) ** 2 + (j - 36) ** 2) / (2 * 8.0 ** 2)))
     with torch.no_grad():
-        img = cam(torch.ones(64, 64, dtype=torch.complex64))
+        img = cam(field.to(torch.complex64))
     assert img.shape == (16, 16)
     golden("coded_phase_cam", img=img.numpy())
