@@ -58,20 +58,94 @@ class Modulator(nn.Module):
 
 
 class Magnification(nn.Module):
-    def __init__(self, mag_factor:float):
+    """Ideal (telecentric) magnification by ``M``: the field pattern is stretched, not resampled.
+
+    The array is unchanged; each sample now covers an ``M`` times larger patch, so the spacing
+    becomes ``spacing * M`` (see :meth:`output_spacing`). Energy conservation over the
+    ``M**2`` larger area scales the amplitude by ``1/M`` (intensity by ``1/M**2``). Image
+    inversion is ignored.
+
+    Parameters
+    ----------
+    magnification : float
+        Lateral magnification ``M`` (dimensionless, > 0).
+    """
+
+    def __init__(self, magnification: float):
         super().__init__()
+        self.magnification = float(magnification)
+        if self.magnification <= 0:
+            raise ValueError(f"magnification must be positive, got {self.magnification}")
 
-        self.mag_factor = int(mag_factor)
+    def forward(self, field: Tensor) -> Tensor:
+        return field / self.magnification
 
-    def forward(self, field:Tensor):
-        field_real = resize(field.unsqueeze(0).real, field.shape[0]*self.mag_factor, torchvision.transforms.InterpolationMode.BILINEAR, antialias=True).squeeze()
-        field_imag = resize(field.unsqueeze(0).imag, field.shape[0]*self.mag_factor, torchvision.transforms.InterpolationMode.BILINEAR, antialias=True).squeeze()
+    def output_spacing(self, spacing):
+        """Spacing ``spacing * M`` in metres, per axis."""
+        return tuple(d * self.magnification for d in _pair(spacing))
 
-        return (field_real + 1j*field_imag)/self.mag_factor**2
 
-    def set_mag(self, mag_factor):
-        self.mag_factor = mag_factor
-        return self
+class Resample(nn.Module):
+    """Change the number of samples covering the same physical area.
+
+    The output has ``round(N * factor)`` samples per axis and spacing ``spacing * N / N_out``.
+    Values are interpolated, not rescaled: ``|E|**2`` is a density.
+
+    Parameters
+    ----------
+    factor : float or tuple of float
+        Sampling factor per axis (> 1 upsamples). May be non-integer.
+    method : {'bilinear', 'fourier'}
+        ``'bilinear'``: torchvision bilinear interpolation (antialiased when downsampling).
+        ``'fourier'``: zero-pads or crops the spectrum, exact for band-limited periodic fields
+        such as the output of a pupil filter.
+    """
+
+    def __init__(self, factor, method: str = "bilinear"):
+        super().__init__()
+        self.factor = _pair(factor)
+        if method not in ("bilinear", "fourier"):
+            raise ValueError(f"method must be 'bilinear' or 'fourier', got {method!r}")
+        self.method = method
+
+    def _out_shape(self, shape):
+        return tuple(max(1, round(n * f)) for n, f in zip(shape, self.factor))
+
+    def forward(self, field: Tensor) -> Tensor:
+        H, W = field.shape[-2:]
+        Ho, Wo = self._out_shape((H, W))
+        if self.method == "bilinear":
+            def interp(x):
+                # torchvision wants (C, H, W): fold any leading dimensions into C.
+                y = resize(x.reshape(-1, H, W), [Ho, Wo], torchvision.transforms.InterpolationMode.BILINEAR,
+                           antialias=True)
+                return y.reshape(*x.shape[:-2], Ho, Wo)
+            return torch.complex(interp(field.real), interp(field.imag)) if field.is_complex() else interp(field)
+        # 'forward' normalisation keeps sample values when the number of samples changes.
+        spec = torch.fft.fftshift(torch.fft.fft2(field, norm="forward"), dim=(-2, -1))
+        spec = _center_fit(spec, Ho, Wo)
+        out = torch.fft.ifft2(torch.fft.ifftshift(spec, dim=(-2, -1)), norm="forward")
+        return out if field.is_complex() else out.real
+
+    def output_spacing(self, spacing, shape=None):
+        """Output spacing in metres. Exact with ``shape`` (rounding of the sample count)."""
+        if shape is None:
+            return tuple(d / f for d, f in zip(_pair(spacing), self.factor))
+        out = self._out_shape(shape[-2:])
+        return tuple(d * n / m for d, n, m in zip(_pair(spacing), shape[-2:], out))
+
+
+def _center_fit(spec: Tensor, Ho: int, Wo: int) -> Tensor:
+    """Zero-pad or crop a centred spectrum ``(..., H, W)`` to ``(..., Ho, Wo)``."""
+    H, W = spec.shape[-2:]
+    out = spec.new_zeros(*spec.shape[:-2], Ho, Wo)
+    h, w = min(H, Ho), min(W, Wo)
+    # Keep the h x w block around the zero frequency, which fftshift puts at index n // 2.
+    si, sj = H // 2 - h // 2, W // 2 - w // 2
+    di, dj = Ho // 2 - h // 2, Wo // 2 - w // 2
+    out[..., di:di + h, dj:dj + w] = spec[..., si:si + h, sj:sj + w]
+    return out
+
 
 def _pair(value):
     """``x`` -> ``(x, x)``; a pair stays a pair (as floats)."""
