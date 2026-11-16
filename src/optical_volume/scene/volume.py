@@ -18,20 +18,17 @@ class Grid(nn.Module):
         z = torch.arange(self.nz) * self.dz
 
         grid = torch.meshgrid(x, y, z, indexing="ij")
-        
+
         self.register_buffer('grid', torch.stack(grid, dim=-1))
-        # self.register_buffer('grid', X)
-        # self.register_buffer('Y', Y)
-        # self.register_buffer('Z', Z)
 
 
 class CollectionVolume(Grid):
     def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], n_bg: float):
         super().__init__(shape, spacing)
-   
+
         self.n_bg = n_bg
         self.shapes = nn.ModuleList()
-        
+
     def add(self, shape: List):
         self.shapes.extend(shape)
 
@@ -42,7 +39,7 @@ class CollectionVolume(Grid):
             field = field * (1 - mask/shape.RI) + mask
 
         return field
-    
+
 
 class VoxelVolume(nn.Module):
     def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], volume: Tensor = None, n0 = float,
@@ -57,13 +54,12 @@ class VoxelVolume(nn.Module):
         self.quat = torch.nn.Parameter(from_axis_angle(torch.tensor(rotation_axis).float(), 
                                                        torch.deg2rad(torch.tensor(rotation_angle))))
         self.center = torch.tensor(self.nx*self.dx/2, self.ny*self.dy/2, self.nz*self.dz/2) if object_center is None else torch.tensor(object_center)
-        # self.rot_position = torch.tensor(self.nx*self.dx/2, self.ny*self.dy/2, self.nz*self.dz/2) if rotation_center is None else torch.tensor(object_center)
 
     def set_volume(self, volume: Tensor):
 
         assert tuple(volume.shape) == tuple(self.shape)
         volume = torch.nn.Parameter(volume.float())
-        
+
         return volume
 
     def forward(self, grid: Tensor):
@@ -96,84 +92,3 @@ class VoxelVolume(nn.Module):
         )
 
         return sampled_ri.squeeze()
-
-    def voxelize(self):
-        # if the input volume is not in voxels
-        pass
-
-
-
-if __name__ == '__main__':
-    # from grid import Grid
-    from shapes import *
-    from matplotlib import pyplot as plt
-    
-    from torch.optim import Adam
-    from torch import nn
-    
-    
-    # example 1: create two spheres and visulization the RI volume
-    sphere1 = Sphere(torch.tensor((55, 50, 40)).float(), torch.tensor((10.)), torch.tensor(1.3), softness=1e2)
-    sphere2 = Sphere(torch.tensor((30, 50, 40)).float(), torch.tensor((10.)), torch.tensor(1.3), softness=1e2)
-    
-    grid = Grid((100, 100, 100), (1, 1, 1))
-    
-    vol = Volume(grid, n_bg=torch.tensor(1.33))
-    vol.add([sphere1, sphere2])
-        
-    ri_dist = vol.forward()
-    
-    print(f'RI Volume: {ri_dist.dtype}, {ri_dist.requires_grad}, {ri_dist.shape}')
-    plt.imshow(ri_dist.detach()[:, :, 40])
-    plt.colorbar()
-    plt.show()
-    
-    # example 2: Create two volumes and optimize by updating the shape center
-    vol1 = Volume(grid, n_bg=torch.tensor(1.33))
-    vol2 = Volume(grid, n_bg=torch.tensor(1.33))
-    
-    vol1.add([sphere1])
-    vol2.add([sphere2])
-    
-    # optimizer = Adam(vol1.parameters(), lr=1e-3)
-    optimizer = Adam([sphere1.center], lr=1e-1)
-    loss_fn = nn.MSELoss()
-    
-    centers = []
-    for i in range(1000):
-        optimizer.zero_grad()
-        ri_dist = vol1.forward()
-        loss = loss_fn(ri_dist, vol2.forward())
-        print(loss.item())
-        
-        loss.backward()
-        optimizer.step()
-        
-        # print(vol1.shapes[0].center, vol1.shapes[0].radius, vol1.shapes[0].RI)
-        # print(vol2.shapes[0].center, vol2.shapes[0].radius, vol2.shapes[0].RI)
-        centers.append(vol1.shapes[0].center[0].item())
-        # plt.imshow(ri_dist.detach()[:, :, 40])
-        # plt.colorbar()
-        # plt.show()
-    plt.plot(centers)
-    plt.show()
-    
-    
-    # example 3: add multiple shapes
-    
-    shapes = make_ellipsoids(
-        torch.tensor([[55, 50, 40], [75, 50, 40], [30, 50, 40]]).float(),
-        torch.tensor([[5, 10, 10], [15, 5, 7], [10, 10, 10]]).float(),
-        torch.tensor([3., 1, 2.]).float(), 
-        rotation=True
-    )
-    
-    vol = Volume(grid, n_bg=torch.tensor(1.33))
-    vol.add(shapes)
-    
-    ri_dist = vol.forward()
-    
-    print(f'RI Volume: {ri_dist.dtype}, {ri_dist.requires_grad}, {ri_dist.shape}')
-    plt.imshow(ri_dist.detach()[:, :, 40])
-    plt.colorbar()
-    plt.show()

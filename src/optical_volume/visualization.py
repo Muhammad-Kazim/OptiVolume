@@ -145,7 +145,3 @@ def visualize_complex_field(field, support, title="Complex Wavefield", units=1e-
         plt.xlabel('X (m)')
         plt.ylabel('Y (m)')
     plt.show()
-
-
-if __name__=='__main__':
-    pass

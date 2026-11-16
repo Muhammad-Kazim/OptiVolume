@@ -175,7 +175,3 @@ def normalized_cross_corr(x, y, eps=1e-12):
 
     ncc = numerator / denominator
     return ncc
-
-
-if __name__=='__main__':
-    pass
