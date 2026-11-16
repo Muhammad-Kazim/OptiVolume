@@ -135,3 +135,15 @@ def test_signed_distance_gradient(d0):
     with torch.no_grad():
         finite_diff = (loss(d0 + h) - loss(d0 - h)) / (2 * h)
     assert prop.distance.grad.item() == pytest.approx(finite_diff.item(), rel=1e-4)
+
+
+def test_bpm_pad_is_background():
+    # A volume whose object touches the edge: padding must act like extra background medium.
+    ri = torch.full((32, 32, 6), N0)
+    ri[:4, :, :] = N0 + 0.05          # slab along the x = 0 face
+    ri[10:14, 10:14, :] = N0 + 0.08
+    p = 8
+    padded = optics.VolumePropagator(WL, SPACING, N0, padding=p)(ri)
+    extended = torch.nn.functional.pad(ri.permute(2, 0, 1), (p, p, p, p), value=N0).permute(1, 2, 0)
+    reference = optics.VolumePropagator(WL, SPACING, N0)(extended)[p:-p, p:-p]
+    torch.testing.assert_close(padded, reference, rtol=1e-5, atol=1e-5)

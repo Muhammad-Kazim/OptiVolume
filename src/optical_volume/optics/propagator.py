@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch import nn, Tensor
 import torchvision
 from typing import Optional, Tuple
@@ -163,8 +164,9 @@ class VolumePropagator(nn.Module):
     RI_background : float
         Refractive index of the surrounding medium (dimensionless).
     padding : int, optional
-        Pixels added on each side of the field and of every phase slice; removed from the
-        output. ``None`` or 0 means no padding.
+        Pixels added on each side of the field (with ``pad_mode``) and of every slice (with the
+        background index ``RI_background``); removed from the output. ``None`` or 0 means no
+        padding.
     pad_mode : str
         torchvision padding mode, ``'edge'`` by default.
     evanescent : {'zero', 'decay'}
@@ -228,10 +230,11 @@ class VolumePropagator(nn.Module):
         # Forward propagation
         for z in range(Nz):
             field_fft = torch.fft.fft2(field)
-            phase = torch.exp(1j*k0*(RI_distribution[..., z] - self.n0)*self.dz)
-
+            delta_n = RI_distribution[..., z] - self.n0
             if self.PAD is not None:
-                phase = _pad_complex(self.PAD, phase) # no delay in the padded region
+                # The pad is background medium (delta_n = 0, no extra delay), not a copy of the edge.
+                delta_n = F.pad(delta_n, (self.pad_by,) * 4)
+            phase = torch.exp(1j*k0*delta_n*self.dz)
 
             field = torch.fft.ifft2(field_fft * transfer_function) * phase
 
