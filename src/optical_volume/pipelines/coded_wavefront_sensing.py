@@ -36,8 +36,6 @@ class CodedPhaseCamV3(torch.nn.Module):
             ))
 
     def forward(self, field: Tensor):
-        self.pcam_FM.fields.clear()
-
         field = self.pcam_FM(field)
         intensity = field.abs()**2
 
