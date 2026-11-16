@@ -2,26 +2,11 @@ import pickle
 import os
 import sys
 import numpy as np
-from matplotlib import pyplot as plt
-from scipy.signal import convolve2d as convolve
-from scipy.fftpack import dct, idct
-import csv
-from tifffile import tifffile
-import json
-
-from typing import Optional, Tuple, List
-from torch import nn, Tensor
 
 import torch
 import torchvision
 import torchvision.transforms.functional as F
-from torch import nn, Tensor
-from torch.utils.data import Dataset, DataLoader
-
-from typing import Optional, Tuple, List
-
-from scipy.sparse import spdiags
-from scipy.sparse.linalg import spsolve
+from torch import Tensor
 
 
 def load_pkl(filename):
@@ -63,6 +48,8 @@ def normalization(field, totype='int16'):
         
 
 def plot(imgs, **imshow_kwargs):
+    from matplotlib import pyplot as plt  # optional dependency: pip install optical-volume[plot]
+
     if not isinstance(imgs[0], list):
         # Make a 2d grid even if there's just 1 row
         imgs = [imgs]

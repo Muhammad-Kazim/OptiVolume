@@ -1,6 +1,22 @@
+"""Plotting helpers.
+
+matplotlib functions need ``pip install optical-volume[plot]``; the 3D volume
+renderers (``visualize_grid_vol``, ``visualize_grid_iso_surf``) also need mayavi
+(``pip install optical-volume[mayavi]`` or ``conda install -c conda-forge mayavi``).
+"""
 import matplotlib.pyplot as plt
 import numpy as np
-from mayavi import mlab
+
+
+def _mlab():
+    try:
+        from mayavi import mlab
+    except ImportError as err:
+        raise ImportError(
+            "3D rendering needs mayavi: pip install optical-volume[mayavi] "
+            "(or conda install -c conda-forge mayavi)"
+        ) from err
+    return mlab
 
 
 # https://docs.enthought.com/mayavi/mayavi/mlab_case_studies.html
@@ -13,6 +29,7 @@ def visualize_grid_vol(RI_distribution, support=None, n_background=1., factor=2,
         n_background (float, optional): background RI. Defaults to 1.
         factor (int, optional): downsampling, use every factor-th sample. Defaults to 2.
     """
+    mlab = _mlab()
     x = np.arange(0, RI_distribution.shape[0], factor)
     y = np.arange(0, RI_distribution.shape[1], factor)
     z = np.arange(0, RI_distribution.shape[2], factor)
@@ -49,6 +66,7 @@ def visualize_grid_iso_surf(RI_distribution, n_background=1., factor=2,
         n_background (float, optional): background RI. Defaults to 1.
         factor (int, optional): downsampling, use every factor-th sample. Defaults to 2.
     """
+    mlab = _mlab()
     x = np.arange(RI_distribution.shape[0]//factor)
     y = np.arange(RI_distribution.shape[1]//factor)
     z = np.arange(RI_distribution.shape[2]//factor)

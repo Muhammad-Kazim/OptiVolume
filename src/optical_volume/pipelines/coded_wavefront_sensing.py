@@ -1,14 +1,7 @@
-import os
-import sys
 import torch
-import torchvision
-from torchvision.transforms import GaussianBlur, Resize
-# from py_wave_propagator import torch_volume_prop as propagator
 
 from typing import Optional, Tuple, List
 from torch import nn, Tensor
-
-# sys.path.insert(0, '/'.join(os.getcwd().split('/')[:-1]))
 
 from optical_volume import optics
 from optical_volume import scene

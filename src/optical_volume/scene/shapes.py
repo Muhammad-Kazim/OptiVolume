@@ -1,6 +1,5 @@
 import torch
 from torch import Tensor, nn
-from scipy.spatial.transform import Rotation as Rot
 
 from typing import Tuple
 

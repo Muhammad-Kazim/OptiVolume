@@ -1,7 +1,4 @@
-import numpy as np
-from scipy.signal import convolve2d as convolve
 import torch
-import torchvision
 
 from typing import Optional, Tuple, List
 from torch import nn, Tensor
