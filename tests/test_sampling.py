@@ -48,3 +48,18 @@ def test_output_spacing_chain():
         optics.utils.PixelIntegrator(2.5),
     ))
     assert system.output_spacing(100e-9) == pytest.approx((5e-6, 5e-6))
+
+
+def test_blur_active_and_differentiable():
+    field = _bandlimited(seed=3).to(torch.complex64)
+    spacing = (100e-9, 100e-9)
+    assert torch.equal(optics.utils.PartialCoherenceBlur(spacing)(field), field)  # sigma = 0: no-op
+
+    blur = optics.utils.PartialCoherenceBlur(spacing, angular_spread=0.1, defocus=2e-6)  # sigma = 2 samples
+    out = blur(field)
+    assert (out - field).abs().max() > 1e-2
+    out.abs().sum().backward()
+    assert blur.angular_spread.grad.abs() > 0 and blur.defocus.grad.abs() > 0
+
+    flat = torch.full((16, 16), 2.0)
+    torch.testing.assert_close(blur(flat), flat)  # replicate padding keeps a uniform input uniform

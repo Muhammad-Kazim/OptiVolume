@@ -26,6 +26,10 @@ def _modules():
         "collection": collection,
         "voxels": scene.VoxelVolume(SHAPE, SPACING, n0=1.33),
         "camera": pipelines.CodedPhaseCamV3(WL, (1.5e-6, 1.5e-6), (64, 64), padding=16),
+        "detector": optics.OpticalSystem((
+            optics.utils.Magnification(40), optics.utils.Resample(2), optics.utils.Intensity(),
+            optics.utils.PixelIntegrator(pixel_size=5e-6, spacing=2e-6, offset=(1e-7, 0.)))),
+        "blur": optics.utils.PartialCoherenceBlur(SPACING[:2], sigma0=1e-7, angular_spread=0.1, defocus=1e-6),
     }
 
 
