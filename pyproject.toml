@@ -29,7 +29,6 @@ classifiers = [
 # CUDA build first (see README) if you need one.
 dependencies = [
   "numpy>=1.24",
-  "scipy>=1.9",
   "torch>=2.4.0",
   "torchvision>=0.19.1",
 ]
