@@ -18,20 +18,17 @@ class Grid(nn.Module):
         z = torch.arange(self.nz) * self.dz
 
         grid = torch.meshgrid(x, y, z, indexing="ij")
-        
+
         self.register_buffer('grid', torch.stack(grid, dim=-1))
-        # self.register_buffer('grid', X)
-        # self.register_buffer('Y', Y)
-        # self.register_buffer('Z', Z)
 
 
 class CollectionVolume(Grid):
     def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], n_bg: float):
         super().__init__(shape, spacing)
-   
+
         self.n_bg = n_bg
         self.shapes = nn.ModuleList()
-        
+
     def add(self, shape: List):
         self.shapes.extend(shape)
 
@@ -42,7 +39,7 @@ class CollectionVolume(Grid):
             field = field * (1 - mask/shape.RI) + mask
 
         return field
-    
+
 
 class VoxelVolume(nn.Module):
     def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], volume: Tensor = None, n0 = float,
@@ -57,13 +54,12 @@ class VoxelVolume(nn.Module):
         self.quat = torch.nn.Parameter(from_axis_angle(torch.tensor(rotation_axis).float(), 
                                                        torch.deg2rad(torch.tensor(rotation_angle))))
         self.center = torch.tensor(self.nx*self.dx/2, self.ny*self.dy/2, self.nz*self.dz/2) if object_center is None else torch.tensor(object_center)
-        # self.rot_position = torch.tensor(self.nx*self.dx/2, self.ny*self.dy/2, self.nz*self.dz/2) if rotation_center is None else torch.tensor(object_center)
 
     def set_volume(self, volume: Tensor):
 
         assert tuple(volume.shape) == tuple(self.shape)
         volume = torch.nn.Parameter(volume.float())
-        
+
         return volume
 
     def forward(self, grid: Tensor):
@@ -96,7 +92,3 @@ class VoxelVolume(nn.Module):
         )
 
         return sampled_ri.squeeze()
-
-    def voxelize(self):
-        # if the input volume is not in voxels
-        pass
