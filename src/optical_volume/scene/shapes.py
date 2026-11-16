@@ -235,39 +235,3 @@ def add_plane(self, point: Tensor, normal: Tensor, RI: Tensor, thickness: Tensor
         
 def _soft_step(x: Tensor, softness=1e-6): 
     return torch.sigmoid(x / softness)
-
-
-if __name__ == '__main__':
-    from grid import Grid
-    from matplotlib import pyplot as plt
-    
-    grid = Grid([100, 100, 100], [1., 1., 1.])
-    obj = Ellipsoid(torch.tensor([50, 20, 20]).float(), torch.tensor([10, 5, 9]).float(), 
-                    torch.tensor(1.5), rotation=True, softness=1e-6)
-    
-    print(f'Center: {obj.center}')
-    print(f'Radii: {obj.radii}')
-    print(f'RI: {obj.RI}')
-    print(f'Rot Matrix: {obj.rotation}')
-    
-    plt.imshow(obj(grid)[..., 20].detach())
-    plt.plot(20, 50, 'r*')
-    plt.colorbar()
-    plt.grid()
-    plt.show()
-    
-    # make ellipsoids examples
-    
-    obj_2 = make_ellipsoids(torch.tensor([[50, 20, 20], [50, 20, 50]]).float(), 
-                            torch.tensor([[10, 5, 9], [10, 5, 9]]).float(), 
-                            torch.tensor([1.5, 1.6]), rotation=True)
-    
-    print("Two Ellipsoids", obj_2)
-    
-    plt.imshow(obj_2[1](grid)[:, 20, :].detach())
-    plt.plot(20, 50, 'r*')
-    plt.colorbar()
-    plt.grid()
-    plt.show()
-    
-    print(nn.ModuleList((obj_2 + [obj])))

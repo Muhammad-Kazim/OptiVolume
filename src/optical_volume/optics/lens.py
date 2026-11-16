@@ -159,27 +159,3 @@ class F4ImagingSystem(nn.Module):
 #     wave_spectrum = np.fft.fftshift(np.fft.fft2(wavefield))*np.roll(mask, (loc[0], loc[1]), axis=(1, 0))
     
 #     return np.fft.ifft2(np.fft.ifftshift(wave_spectrum))
-
-
-if __name__=='__main__':
-    from matplotlib import pyplot as plt
-    
-    # example: functions properly, chaining tested, can be used in an optics system
-    WL = 500e-9
-    spacing = [10e-6, 10e-6]
-    shape = [100, 100]
-    NA = 0.01
-    
-    lens = F4ImagingSystem(WL, spacing, shape, NA)
-    
-    x = (torch.arange(100)-50)*spacing[0]
-    X, Y = torch.meshgrid(x, x, indexing='ij')
-    
-    wavefield = torch.where(X**2 + Y**2 < (300e-6)**2, 1+0j, 0+0j)
-    
-    field = lens.forward(wavefield)
-    
-    # print(lens)
-    plt.imshow(field.abs().detach())
-    plt.colorbar()
-    plt.show()
