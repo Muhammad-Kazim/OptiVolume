@@ -96,3 +96,42 @@ def test_evanescent_suppressed():
 
     with pytest.raises(ValueError):
         optics.FreeSpacePropagator(WL, (100e-9, 100e-9), 1e-6, evanescent="keep")
+
+
+def _lowpass_field(n=64, dx=200e-9, seed=0):
+    # Random field limited to |k| < k0/2, so it is entirely propagating.
+    g = torch.Generator().manual_seed(seed)
+    spectrum = torch.randn(n, n, generator=g) + 1j * torch.randn(n, n, generator=g)
+    f = torch.fft.fftfreq(n, dx)
+    keep = (f[:, None] ** 2 + f[None, :] ** 2) < (0.5 / WL) ** 2
+    return torch.fft.ifft2(spectrum * keep).to(torch.complex64)
+
+
+def test_propagate_back_and_forth():
+    field = _lowpass_field()
+    spacing = (200e-9, 200e-9)
+    there = optics.FreeSpacePropagator(WL, spacing, 5e-6)(field)
+    back_signed = optics.FreeSpacePropagator(WL, spacing, -5e-6)(there)
+    back_flag = optics.FreeSpacePropagator(WL, spacing, 5e-6, direction="backward")(there)
+    scale = field.abs().max()
+    torch.testing.assert_close(back_signed, field, rtol=0, atol=1e-4 * scale)
+    torch.testing.assert_close(back_flag, back_signed, rtol=0, atol=1e-6 * scale)
+
+
+@pytest.mark.parametrize("d0", [-1e-6, 0.0, 1e-6])
+def test_signed_distance_gradient(d0):
+    field = _lowpass_field().to(torch.complex128)
+    weight = torch.rand(64, 64, generator=torch.Generator().manual_seed(1), dtype=torch.float64)
+    prop = optics.FreeSpacePropagator(WL, (200e-9, 200e-9), d0).double()
+
+    def loss(d):
+        prop.distance.data.fill_(d)
+        return (prop(field).real * weight).sum()
+
+    prop.distance.data.fill_(d0)
+    prop.zero_grad()
+    loss(d0).backward()
+    h = 1e-9
+    with torch.no_grad():
+        finite_diff = (loss(d0 + h) - loss(d0 - h)) / (2 * h)
+    assert prop.distance.grad.item() == pytest.approx(finite_diff.item(), rel=1e-4)

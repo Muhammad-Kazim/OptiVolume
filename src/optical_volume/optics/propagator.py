@@ -83,9 +83,10 @@ class FreeSpacePropagator(nn.Module):
     spacing : tuple of float
         Lateral sampling ``(dx, dy)`` of the field, in metres.
     distance : float
-        Propagation distance between the parallel planes, in metres. Stored as a parameter.
+        Signed propagation distance in metres (negative propagates backwards). Stored as a
+        parameter.
     direction : {'forward', 'backward'}
-        Propagation direction.
+        ``'backward'`` negates ``distance``.
     padding : int, optional
         Pixels added on each side before propagation and removed afterwards. ``None`` or 0
         means no padding.
@@ -129,11 +130,11 @@ class FreeSpacePropagator(nn.Module):
         if self.PAD is not None:
             field = _pad_complex(self.PAD, field)
 
+        # Signed distance: H = exp(i kz d) is smooth in d through 0, so focus searches work.
+        distance = -self.distance if self.direction == 'backward' else self.distance
         transfer_function = _transfer_function(field.shape[-2:], (self.dx, self.dy),
-                                               2 * torch.pi / self.wavelength, self.distance,
+                                               2 * torch.pi / self.wavelength, distance,
                                                self.evanescent, device)
-        if (self.direction == 'backward' and self.distance > 0.) or (self.direction == 'forward' and self.distance < 0.):
-            transfer_function = torch.conj(transfer_function)
 
         field_fft = torch.fft.fft2(field)
 
