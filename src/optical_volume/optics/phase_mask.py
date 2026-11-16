@@ -200,8 +200,21 @@ class CustomPhaseMask(nn.Module):
 
 
 def CustomGaussianBlur(field: Tensor, sigma: Tensor, channels: int = 1):
-    """
-    field: (N, C, H, W)
+    """Differentiable Gaussian blur of a real ``(N, C, H, W)`` tensor.
+
+    Parameters
+    ----------
+    field : Tensor
+        Real input ``(N, C, H, W)``.
+    sigma : Tensor
+        Standard deviation in samples (differentiable).
+    channels : int
+        Number of channels ``C``.
+
+    Notes
+    -----
+    Borders are padded by replicating the edge values, so a uniform input stays uniform. (Zero
+    padding made the optical path length fall to 0 at the mask border, a false phase ramp.)
     """
     device = field.device
     dtype = field.dtype
@@ -225,9 +238,9 @@ def CustomGaussianBlur(field: Tensor, sigma: Tensor, channels: int = 1):
         channels, 1, kernel_size, kernel_size
     )
 
+    field = F.pad(field, (radius, radius, radius, radius), mode='replicate')
     return F.conv2d(
         field,
         kernel2d,
-        padding=radius,
         groups=channels,
     )
