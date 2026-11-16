@@ -95,13 +95,13 @@ class Resample(nn.Module):
     ----------
     factor : float or tuple of float
         Sampling factor per axis (> 1 upsamples). May be non-integer.
-    method : {'bilinear', 'fourier'}
-        ``'bilinear'``: torchvision bilinear interpolation (antialiased when downsampling).
-        ``'fourier'``: zero-pads or crops the spectrum, exact for band-limited periodic fields
-        such as the output of a pupil filter.
+    method : {'fourier', 'bilinear'}
+        ``'fourier'`` (default): zero-pads or crops the spectrum, exact for band-limited
+        periodic fields such as the output of a pupil filter. ``'bilinear'``: torchvision
+        bilinear interpolation (antialiased when downsampling); smooths slightly.
     """
 
-    def __init__(self, factor, method: str = "bilinear"):
+    def __init__(self, factor, method: str = "fourier"):
         super().__init__()
         self.factor = _pair(factor)
         if method not in ("bilinear", "fourier"):
