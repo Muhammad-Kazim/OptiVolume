@@ -95,3 +95,13 @@ optical_volume/
 ```
 
 Units are SI (metres) throughout.
+
+## License and citation
+
+OptiVolume is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): you may use, share and adapt it for any purpose, provided you give appropriate credit. **If you use OptiVolume in research, please cite it:**
+
+```
+Syed Kazim. OptiVolume: differentiable PyTorch wave optics. https://github.com/Muhammad-Kazim/OptiVolume
+```
+
+See [LICENSE](LICENSE) for details.
