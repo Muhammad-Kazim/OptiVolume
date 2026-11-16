@@ -37,7 +37,7 @@ def _sphere_exit_field():
 
 
 def _v5_cwfs_chain():
-    """The chain from examples/01_basic_usage/v5_cwfs_system.ipynb, scaled down to 64²."""
+    """The chain from examples/04_coded_wavefront_sensing.ipynb, scaled down to 64²."""
     obj_img_factor, mag = 20, 40
     eff_mag = mag // obj_img_factor
     img_spacing = [s * obj_img_factor for s in OBJ_SPACING[:2]]  # 2 µm
