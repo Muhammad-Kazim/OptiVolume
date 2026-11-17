@@ -75,17 +75,26 @@ def test_element_matches_cpu(name):
 
 
 def _grad_cases():
-    """(module, input, names of the parameters whose gradients are compared)."""
+    """(module, input, parameter names, rtol) for comparing gradients between devices.
+
+    Each loss must depend on the parameter for real: a phase mask alone doesn't change the
+    intensity (|t|=1), so its height gradient is exactly zero and only rounding noise is left.
+    The mask is therefore followed by a propagator. ``rtol`` is the float32 precision of each
+    gradient, measured against float64 on the CPU with 10x margin: the distance gradient carries
+    the propagation phase k_z*z ~ 2e4 rad, so float32 leaves it ~1e-3 relative error.
+    """
     g = torch.Generator().manual_seed(1)
     field = torch.polar(torch.rand(64, 64, generator=g) + 0.5, torch.rand(64, 64, generator=g))
+    mask = optics.BinaryPhaseMask(WL, 12e-6, (2e-6, 2e-6), (64, 64), 100e-9, 0.6, 1.46, seed=0)
     return {
         "pixel_offset": (optics.utils.PixelIntegrator(pixel_size=6e-6, spacing=2.5e-6, offset=(3e-7, 0.)),
-                         torch.rand(64, 64, generator=g), ["offset"]),
+                         torch.rand(64, 64, generator=g), ["offset"], 1e-3),
         "coherence_blur": (optics.utils.PartialCoherenceBlur((1e-7, 1e-7), sigma0=5e-8, angular_spread=0.05, defocus=5e-6),
-                           field, ["sigma0", "angular_spread", "defocus"]),
-        "mask_height": (optics.BinaryPhaseMask(WL, 12e-6, (2e-6, 2e-6), (64, 64), 100e-9, 0.6, 1.46, seed=0),
-                        field, ["height"]),
-        "propagation_distance": (optics.FreeSpacePropagator(WL, (2e-6, 2e-6), 1.43e-3, padding=16), field, ["distance"]),
+                           field, ["sigma0", "angular_spread", "defocus"], 1e-3),
+        "mask_height": (optics.OpticalSystem((mask, optics.FreeSpacePropagator(WL, (2e-6, 2e-6), 1.43e-3, padding=16))),
+                        field, ["elements.0.height"], 1e-4),
+        "propagation_distance": (optics.FreeSpacePropagator(WL, (2e-6, 2e-6), 1.43e-3, padding=16),
+                                 field, ["distance"], 1e-2),
     }
 
 
@@ -93,8 +102,8 @@ def _grads(module, x, names):
     module.zero_grad()
     y = module(x)
     y = y.abs() ** 2 if y.is_complex() else y
-    # A weighted sum, so the gradient doesn't vanish by symmetry or energy conservation.
-    w = torch.linspace(0, 1, y.shape[-1], device=y.device)
+    # Fixed random weights, so the gradient doesn't cancel by symmetry or energy conservation.
+    w = torch.rand(y.shape, generator=torch.Generator().manual_seed(7)).to(y.device, y.dtype)
     (y * w).sum().backward()
     params = dict(module.named_parameters())
     return [params[n].grad.detach().cpu().clone() for n in names]
@@ -102,12 +111,13 @@ def _grads(module, x, names):
 
 @pytest.mark.parametrize("name", list(_grad_cases()))
 def test_gradients_match_cpu(name):
-    module, x, names = _grad_cases()[name]
+    module, x, names, rtol = _grad_cases()[name]
     cpu = _grads(module, x, names)
     gpu = _grads(module.to(DEVICE), x.to(DEVICE), names)
     for n, c, d in zip(names, cpu, gpu):
         assert torch.isfinite(d).all() and d.abs().sum() > 0, f"{n}: no gradient on {DEVICE}"
-        torch.testing.assert_close(d, c, rtol=1e-3, atol=1e-3 * c.abs().max().item(), msg=f"{n} gradient")
+        torch.testing.assert_close(d, c, rtol=rtol, atol=rtol * c.abs().max().item(),
+                                   msg=lambda m, n=n: f"{n} gradient: {m}")
 
 
 def test_mask_border_flat_on_gpu():
