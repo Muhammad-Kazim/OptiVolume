@@ -9,8 +9,31 @@ from optical_volume import utils
 
 class CodedPhaseCamV3(torch.nn.Module):
     def __init__(self, wavelength: float, spacing: Tuple[float, float], shape: Tuple[int, int],
-                 padding: Optional[int] = 512, pad_mode: str = 'edge',softness=1e-12):
+                 padding: Optional[int] = 512, pad_mode: str = 'edge',softness=1e-12,
+                 integrate: str = 'intensity'):
+        """Coded wavefront sensor: phase mask in front of a camera at the image plane.
+
+        Parameters
+        ----------
+        wavelength : float
+            Vacuum wavelength, in metres.
+        spacing : tuple of float
+            Image-space sampling ``(dx, dy)`` in metres.
+        shape : tuple of int
+            Image-space field size ``(H, W)``.
+        padding : int, optional
+            Lateral padding of the propagators, in samples.
+        pad_mode : str
+            torchvision padding mode of the propagators.
+        integrate : {'intensity', 'field'}
+            ``'intensity'`` (default): each camera pixel sums ``|E|**2`` (a physical camera).
+            ``'field'``: sums the complex field first and returns ``|sum E|**2`` (the
+            behaviour before CS4b).
+        """
         super().__init__()
+        if integrate not in ('intensity', 'field'):
+            raise ValueError(f"integrate must be 'intensity' or 'field', got {integrate!r}")
+        self.integrate = integrate
         # shape: img space
 
         # fixed sensor parameters
@@ -21,10 +44,8 @@ class CodedPhaseCamV3(torch.nn.Module):
         DIST_PM_IM = 2.5e-3
         DIGITAL_PX = 6e-6
 
-        SUM_PATCH = int(DIGITAL_PX/spacing[0]) # spacing is image space sampling
-
         pm_obj = optics.BinaryPhaseMask(wavelength, TILE_LEN, spacing, shape, PM_HEIGHT, PM_SIG, PM_RI)
-        px_int_obj = optics.utils.PixelIntegrator(SUM_PATCH)
+        px_int_obj = optics.utils.PixelIntegrator(pixel_size=DIGITAL_PX, spacing=spacing)
         # The sensor sits at the image plane and the mask DIST_PM_IM in front of it: propagate
         # back to the mask, modulate, propagate forward again. Two propagators share one
         # distance Parameter, so training it moves the mask as one physical distance.
@@ -34,15 +55,17 @@ class CodedPhaseCamV3(torch.nn.Module):
                                                     padding=padding, pad_mode=pad_mode)
         prop_to_sensor.distance = prop_to_mask.distance
 
+        detector = (optics.utils.Intensity(), px_int_obj) if integrate == 'intensity' else (px_int_obj,)
         self.pcam_FM = optics.system.OpticalSystem((
             prop_to_mask, # image plane -> mask plane
             pm_obj, # applying the mask
             prop_to_sensor, # mask plane -> sensor (image plane)
-            px_int_obj # add complex values incident on each pixel patch
+            *detector, # camera pixels
             ))
 
     def forward(self, field: Tensor):
-        field = self.pcam_FM(field)
-        intensity = field.abs()**2
+        out = self.pcam_FM(field)
+        if self.integrate == 'field':
+            out = out.abs()**2
 
-        return intensity
+        return out

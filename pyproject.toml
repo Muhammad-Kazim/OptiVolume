@@ -54,3 +54,4 @@ include = ["optical_volume*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["gpu: needs a CUDA device; skipped without one (run only these with -m gpu)"]

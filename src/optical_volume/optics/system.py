@@ -19,6 +19,16 @@ class OpticalSystem(nn.Module):
         self.record = record
         self.fields = []
 
+    def output_spacing(self, spacing):
+        """Sample spacing after the last element, for an input with ``spacing`` (metres).
+
+        Elements that change the sampling define ``output_spacing``; the others keep it.
+        """
+        for element in self.elements:
+            if hasattr(element, "output_spacing"):
+                spacing = element.output_spacing(spacing)
+        return spacing
+
     def forward(self, field):
         # A new list each call: only the latest pass is kept, and a list a caller took
         # from an earlier call is left untouched.

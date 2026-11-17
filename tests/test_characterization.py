@@ -57,10 +57,12 @@ def _v5_cwfs_chain():
             direction="backward", padding=PAD,
         ),
         optics.F4ImagingSystem(WL, OBJ_SPACING, OBJ_SHAPE, NA=0.7),
-        optics.utils.Magnification(torch.tensor(mag / obj_img_factor)),
+        optics.utils.Magnification(mag),
+        optics.utils.Resample(eff_mag),
         prop_to_mask,
         mask,
         prop_to_sensor,
+        optics.utils.Intensity(),
         optics.utils.PixelIntegrator(int(6e-6 / img_spacing[0])),
     ))
 
@@ -69,8 +71,8 @@ def test_char_cwfs_reference(golden):
     system = _v5_cwfs_chain()
     exit_field = _sphere_exit_field().to(torch.complex64)
     with torch.no_grad():
-        img_ref = system(torch.ones(OBJ_SHAPE[:2], dtype=torch.complex64)).abs() ** 2
-        img_spn = system(exit_field).abs() ** 2
+        img_ref = system(torch.ones(OBJ_SHAPE[:2], dtype=torch.complex64))
+        img_spn = system(exit_field)
     assert img_ref.shape == (42, 42)
     golden("cwfs_reference", img_ref=img_ref.numpy(), img_spn=img_spn.numpy())
 
