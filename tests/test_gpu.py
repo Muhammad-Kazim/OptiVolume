@@ -75,26 +75,29 @@ def test_element_matches_cpu(name):
 
 
 def _grad_cases():
-    """(module, input, parameter names, rtol) for comparing gradients between devices.
+    """(module, input, parameter names) for comparing gradients between devices.
 
-    Each loss must depend on the parameter for real: a phase mask alone doesn't change the
-    intensity (|t|=1), so its height gradient is exactly zero and only rounding noise is left.
-    The mask is therefore followed by a propagator. ``rtol`` is the float32 precision of each
-    gradient, measured against float64 on the CPU with 10x margin: the distance gradient carries
-    the propagation phase k_z*z ~ 2e4 rad, so float32 leaves it ~1e-3 relative error.
+    The comparison is only meaningful if float32 computes each gradient accurately, so the
+    cases avoid three traps (each measured against float64 on the CPU):
+    - A phase mask alone doesn't change the intensity (|t| = 1): its height gradient is
+      exactly zero and only rounding noise is left. The mask is followed by a propagator.
+    - The loss weights are zero-mean (see ``_grads``).
+    - The pixel offset is not 0 along either axis: with pixel edges on sample edges the box
+      overlap has a kink, and rounding decides which side's slope is returned.
+    With these, every gradient here is accurate to <= 5e-6 in float32, and the test uses 1e-4.
     """
     g = torch.Generator().manual_seed(1)
     field = torch.polar(torch.rand(64, 64, generator=g) + 0.5, torch.rand(64, 64, generator=g))
     mask = optics.BinaryPhaseMask(WL, 12e-6, (2e-6, 2e-6), (64, 64), 100e-9, 0.6, 1.46, seed=0)
     return {
-        "pixel_offset": (optics.utils.PixelIntegrator(pixel_size=6e-6, spacing=2.5e-6, offset=(3e-7, 0.)),
-                         torch.rand(64, 64, generator=g), ["offset"], 1e-3),
+        "pixel_offset": (optics.utils.PixelIntegrator(pixel_size=6e-6, spacing=2.5e-6, offset=(3e-7, -2e-7)),
+                         torch.rand(64, 64, generator=g), ["offset"]),
         "coherence_blur": (optics.utils.PartialCoherenceBlur((1e-7, 1e-7), sigma0=5e-8, angular_spread=0.05, defocus=5e-6),
-                           field, ["sigma0", "angular_spread", "defocus"], 1e-3),
+                           field, ["sigma0", "angular_spread", "defocus"]),
         "mask_height": (optics.OpticalSystem((mask, optics.FreeSpacePropagator(WL, (2e-6, 2e-6), 1.43e-3, padding=16))),
-                        field, ["elements.0.height"], 1e-4),
+                        field, ["elements.0.height"]),
         "propagation_distance": (optics.FreeSpacePropagator(WL, (2e-6, 2e-6), 1.43e-3, padding=16),
-                                 field, ["distance"], 1e-2),
+                                 field, ["distance"]),
     }
 
 
@@ -102,8 +105,11 @@ def _grads(module, x, names):
     module.zero_grad()
     y = module(x)
     y = y.abs() ** 2 if y.is_complex() else y
-    # Fixed random weights, so the gradient doesn't cancel by symmetry or energy conservation.
-    w = torch.rand(y.shape, generator=torch.Generator().manual_seed(7)).to(y.device, y.dtype)
+    # Fixed random, zero-mean weights. A constant part of the weights would multiply the total
+    # intensity, which the optics conserve: a large term with no gradient, whose float32
+    # rounding (~1e-3 relative here) would swamp the small, real sensitivity.
+    w = torch.rand(y.shape, generator=torch.Generator().manual_seed(7))
+    w = (w - w.mean()).to(y.device, y.dtype)
     (y * w).sum().backward()
     params = dict(module.named_parameters())
     return [params[n].grad.detach().cpu().clone() for n in names]
@@ -111,12 +117,12 @@ def _grads(module, x, names):
 
 @pytest.mark.parametrize("name", list(_grad_cases()))
 def test_gradients_match_cpu(name):
-    module, x, names, rtol = _grad_cases()[name]
+    module, x, names = _grad_cases()[name]
     cpu = _grads(module, x, names)
     gpu = _grads(module.to(DEVICE), x.to(DEVICE), names)
     for n, c, d in zip(names, cpu, gpu):
         assert torch.isfinite(d).all() and d.abs().sum() > 0, f"{n}: no gradient on {DEVICE}"
-        torch.testing.assert_close(d, c, rtol=rtol, atol=rtol * c.abs().max().item(),
+        torch.testing.assert_close(d, c, rtol=1e-4, atol=1e-4 * c.abs().max().item(),
                                    msg=lambda m, n=n: f"{n} gradient: {m}")
 
 
