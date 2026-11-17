@@ -1,4 +1,7 @@
-"""Device moves: every tensor a module owns is registered, so .to() moves it (C2, C3)."""
+"""Device moves: every tensor a module owns is registered, so .to() moves it (C2, C3).
+
+CUDA results are compared with the CPU in ``test_gpu.py``.
+"""
 import pytest
 import torch
 from torch import Tensor
@@ -43,14 +46,3 @@ def test_to_device_moves_state(name):
         assert not stray, f"{name}.{sub_name}: unregistered tensor attributes {stray}"
     for key, tensor in list(module.named_parameters()) + list(module.named_buffers()):
         assert tensor.device.type == "meta", f"{name}.{key} stayed on {tensor.device}"
-
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA device")
-def test_cuda_matches_cpu():
-    torch.manual_seed(0)
-    cam = pipelines.CodedPhaseCamV3(WL, (1.5e-6, 1.5e-6), (64, 64), padding=16)
-    field = torch.exp(1j * torch.rand(64, 64)).to(torch.complex64)
-    with torch.no_grad():
-        cpu = cam(field)
-        gpu = cam.to("cuda")(field.to("cuda")).cpu()
-    torch.testing.assert_close(gpu, cpu, rtol=1e-4, atol=1e-4 * cpu.abs().max().item())

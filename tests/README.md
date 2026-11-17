@@ -13,5 +13,6 @@ Run with `pytest -q` (in the `optical_volume` conda env).
 - `test_cwfs.py`: `CodedPhaseCamV3` mask plane and shared propagation distance.
 - `test_detector.py`: tile/pixel rounding, `PixelIntegrator` (integer, fractional, offset) and `Intensity`.
 - `test_sampling.py`: `Magnification`, `Resample` and `output_spacing`.
-- `test_device.py`: `.to()` moves every tensor a module owns; CUDA vs CPU when a GPU is present.
+- `test_device.py`: `.to()` moves every tensor a module owns (checked on the `meta` device).
+- `test_gpu.py`: GPU only (marker `gpu`, skipped without CUDA): elements, gradients and the example 04/06/07 chains on CUDA match the CPU; reference brightness of the example chains. `pytest -m gpu` runs only these; `OPTIVOLUME_TEST_DEVICE=cuda:1` picks the device.
 - `fixtures/`: stored reference data for the tests (see `fixtures/README.md`).
