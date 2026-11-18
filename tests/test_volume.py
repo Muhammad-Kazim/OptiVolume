@@ -1,4 +1,4 @@
-"""VoxelVolume construction defaults (B6)."""
+"""VoxelVolume construction defaults (B6) and sampling outside the box (A9)."""
 import pytest
 import torch
 
@@ -30,3 +30,24 @@ def test_voxel_volume_defaults():
 def test_voxel_volume_requires_n0_keyword():
     with pytest.raises(TypeError):
         scene.VoxelVolume(SHAPE, SPACING)
+
+
+def test_voxel_outside_is_background():
+    # An object filling its whole box, rotated by 30 degrees: grid points that map outside the
+    # box are exactly the background, inside it the object (A9).
+    n, d, n0 = 32, 1e-7, 1.33
+    shape, spacing = (n, n, 3), (d, d, d)
+    vol = scene.VoxelVolume(shape, spacing, torch.full(shape, 1.38), n0=n0, rotation_angle=30.)
+    grid = scene.volume.Grid(shape, spacing).grid
+    with torch.no_grad():
+        ri = vol(grid)
+    # Where does each grid point land in the box (in voxel units)?
+    c = torch.tensor([(n - 1) * d / 2, (n - 1) * d / 2, d])
+    th = torch.deg2rad(torch.tensor(30.))
+    R = torch.tensor([[torch.cos(th), -torch.sin(th), 0.], [torch.sin(th), torch.cos(th), 0.], [0., 0., 1.]])
+    p = (((grid - c) @ R + c) / d)[..., :2]                   # rotation about z: z stays on its voxels
+    outside = ((p < -1) | (p > n)).any(dim=-1)                # more than one voxel outside the box
+    inside = ((p > 1) & (p < n - 2)).all(dim=-1)
+    assert outside.any() and inside.any()
+    assert torch.equal(ri[outside], torch.full_like(ri[outside], n0))
+    torch.testing.assert_close(ri[inside], torch.full_like(ri[inside], 1.38))

@@ -69,8 +69,9 @@ class VoxelVolume(nn.Module):
     Notes
     -----
     ``forward(grid)`` samples the rotated volume at the points ``grid (..., 3)`` (metres)
-    with trilinear interpolation. Points outside the box currently take the value of the
-    nearest edge voxel (``padding_mode='border'``).
+    with trilinear interpolation (a backward map, so there are no holes). Points that map
+    outside the voxel box are the background ``n0``: the difference ``volume - n0`` is
+    interpolated with zero padding and ``n0`` added back.
     """
 
     def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], volume: Tensor = None,
@@ -112,15 +113,17 @@ class VoxelVolume(nn.Module):
         # grid_sample expects the grid in the shape (N, D, H, W, 3), so we need to add a batch dimension
         pts_normalized = pts_normalized.unsqueeze(0)
 
-        ri = self.volume.permute(2, 1, 0)
+        # Interpolate the contrast to the background with zero padding, so points outside the
+        # box are exactly n0. Repeating the edge voxels ('border') would smear an object that
+        # touches the box edge out to the grid boundary (A9).
+        contrast = (self.volume - self.n0).permute(2, 1, 0)
 
-        # Sample the RI distribution using grid_sample
-        sampled_ri = F.grid_sample(
-            ri.unsqueeze(0).unsqueeze(0),  # (N, C, D, H, W)
+        sampled = F.grid_sample(
+            contrast.unsqueeze(0).unsqueeze(0),  # (N, C, D, H, W)
             pts_normalized,
             mode='bilinear',
-            padding_mode='border',
+            padding_mode='zeros',
             align_corners=True
         )
 
-        return sampled_ri.squeeze()
+        return sampled.squeeze() + self.n0
