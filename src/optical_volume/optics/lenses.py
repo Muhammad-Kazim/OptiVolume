@@ -9,7 +9,7 @@ from torch import nn, Tensor
 _EDGE_WIDTH_PER_SOFTNESS = 2 * math.log(9)
 
 
-class F4ImagingSystem(nn.Module):
+class FourFSystem(nn.Module):
     """4f imaging: maps the field in the object focal plane to the image plane through a pupil.
 
     Parameters

@@ -53,7 +53,7 @@ def test_phase_mask_arguments():
 def test_mask_border_flat():
     plane = torch.ones(32, 32, dtype=torch.complex64)
     binary = _mask(tile_map=torch.ones(8, 8))
-    custom = optics.CustomPhaseMask(*ARGS[:4], torch.full((8, 8), 300e-9), 1.0, 1.46)
+    custom = optics.HeightMapPhaseMask(*ARGS[:4], torch.full((8, 8), 300e-9), 1.0, 1.46)
     for mask in (binary, custom):
         phase = mask(plane).angle()
         torch.testing.assert_close(phase, torch.full_like(phase, phase[16, 16].item()), rtol=0, atol=1e-5)

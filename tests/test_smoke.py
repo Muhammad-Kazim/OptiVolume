@@ -34,29 +34,29 @@ def test_collection_volume_values():
 
 def test_volume_propagation_is_differentiable():
     vol, sphere = _sphere_volume()
-    field = optics.VolumePropagator(WL, SPACING, N_BG)(vol())
+    field = optics.BeamPropagation(WL, SPACING, N_BG)(vol())
     assert field.shape == SHAPE[:2]
     assert field.is_complex()
     field.real.sum().backward()
     assert sphere.radius.grad is not None
-    assert sphere.RI.grad is not None
+    assert sphere.n.grad is not None
 
 
 def test_free_space_plane_wave_keeps_unit_amplitude():
     plane_wave = torch.ones(SHAPE[:2], dtype=torch.complex64)
-    out = optics.FreeSpacePropagator(WL, SPACING[:2], 20e-6)(plane_wave)
+    out = optics.AngularSpectrum(WL, SPACING[:2], 20e-6)(plane_wave)
     assert out.shape == plane_wave.shape
     assert torch.allclose(out.abs(), torch.ones_like(out.abs()), atol=1e-4)
 
 
 def test_lens_passes_dc():
     plane_wave = torch.ones(SHAPE[:2], dtype=torch.complex64)
-    out = optics.F4ImagingSystem(WL, SPACING[:2], SHAPE[:2], NA=0.5)(plane_wave)
+    out = optics.FourFSystem(WL, SPACING[:2], SHAPE[:2], NA=0.5)(plane_wave)
     assert torch.allclose(out.abs(), torch.ones_like(out.abs()), atol=1e-4)
 
 
 def test_binary_phase_mask_is_phase_only():
-    mask = optics.BinaryPhaseMask(WL, 4e-6, SPACING, SHAPE, height=500e-9, sigma=1.0, RI_PM=1.46)
+    mask = optics.BinaryPhaseMask(WL, 4e-6, SPACING, SHAPE, height=500e-9, sigma=1.0, n_mask=1.46)
     plane_wave = torch.ones(SHAPE[:2], dtype=torch.complex64)
     out = mask(plane_wave)
     assert out.shape == SHAPE[:2]
@@ -65,9 +65,9 @@ def test_binary_phase_mask_is_phase_only():
 
 def test_optical_system_chain():
     system = optics.OpticalSystem((
-        optics.FreeSpacePropagator(WL, SPACING[:2], 10e-6),
-        optics.F4ImagingSystem(WL, SPACING[:2], SHAPE[:2], NA=0.5),
-        optics.utils.PixelIntegrator(2),
+        optics.AngularSpectrum(WL, SPACING[:2], 10e-6),
+        optics.FourFSystem(WL, SPACING[:2], SHAPE[:2], NA=0.5),
+        optics.PixelIntegrator(2),
     ), record=True)
     out = system(torch.ones(SHAPE[:2], dtype=torch.complex64))
     assert out.shape == (SHAPE[0] // 2, SHAPE[1] // 2)
@@ -75,7 +75,7 @@ def test_optical_system_chain():
 
 
 def test_coded_phase_camera_runs():
-    cam = pipelines.CodedPhaseCamV3(wavelength=WL, spacing=(1.5e-6, 1.5e-6), shape=(64, 64), padding=16)
+    cam = pipelines.CodedWavefrontSensor(wavelength=WL, spacing=(1.5e-6, 1.5e-6), shape=(64, 64), padding=16)
     img = cam(torch.ones(64, 64, dtype=torch.complex64))
     assert img.dim() == 2
     assert not img.is_complex()

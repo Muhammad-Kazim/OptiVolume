@@ -59,7 +59,7 @@ with torch.no_grad():
             ycenter = (shape.center[1].detach().clone() - 45e-6)*ty[t] + 45e-6
             zcenter = shape.center[2].detach().clone()
             radius = shape.radius.detach().clone()
-            RI = shape.RI.detach().clone() - 0.04*t # torch.randn(1)[0]/10
+            RI = shape.n.detach().clone() - 0.04*t # torch.randn(1)[0]/10
             
             vol_t.add([scene.shapes.Sphere(torch.tensor((xcenter, ycenter, 5e-6)).float(), radius, RI)])
             
@@ -86,20 +86,20 @@ with torch.no_grad():
 # ani = animation.FuncAnimation(fig=fig, func=update, frames=6, interval=150)
 # plt.show()
 
-vol_prop = optics.VolumePropagator(WL, OBJ_SPACING, N_BG)
+vol_prop = optics.BeamPropagation(WL, OBJ_SPACING, N_BG)
 
 # vol_prop.set_source_field(100*torch.ones([SHAPE[0], SHAPE[1]], dtype=torch.complex64, device=DEVICE))
 
 # Partial coherence: no blur for now. Set sigma0 (m) or angular_spread (rad) to enable;
 # blurring the field here smooths the object's projection, not the mask pattern.
-psc_approx = optics.utils.PartialCoherenceBlur(OBJ_SPACING[:2], sigma0=0., angular_spread=0., defocus=FOC_PLANE_VAR)
-resample = optics.utils.Resample(EFF_MAG)  # object field sampled at OBJ_SPACING / EFF_MAG
-mag_obj = optics.utils.Magnification(MAG)  # physical: spacing x MAG -> IMG_SPACING, amplitude / MAG
-lens = optics.F4ImagingSystem(WL, [x/EFF_MAG for x in OBJ_SPACING], IMG_SHAPE, NA)
+psc_approx = optics.PartialCoherenceBlur(OBJ_SPACING[:2], sigma0=0., angular_spread=0., defocus=FOC_PLANE_VAR)
+resample = optics.Resample(EFF_MAG)  # object field sampled at OBJ_SPACING / EFF_MAG
+mag_obj = optics.Magnification(MAG)  # physical: spacing x MAG -> IMG_SPACING, amplitude / MAG
+lens = optics.FourFSystem(WL, [x/EFF_MAG for x in OBJ_SPACING], IMG_SHAPE, NA)
 
-prop_obj_space = optics.FreeSpacePropagator(WL/N_BG, OBJ_SPACING[:2], SHAPE[2]*OBJ_SPACING[2]/2 - FOC_PLANE_VAR, direction='backward', padding=PAD)
+prop_obj_space = optics.AngularSpectrum(WL/N_BG, OBJ_SPACING[:2], SHAPE[2]*OBJ_SPACING[2]/2 - FOC_PLANE_VAR, direction='backward', padding=PAD)
 
-phase_camera = pipelines.CodedPhaseCamV3(wavelength=WL, spacing=IMG_SPACING, shape=IMG_SHAPE, padding=PAD, pad_mode=PAD_MODE)
+phase_camera = pipelines.CodedWavefrontSensor(wavelength=WL, spacing=IMG_SPACING, shape=IMG_SHAPE, padding=PAD, pad_mode=PAD_MODE)
 
 image_formation = optics.system.OpticalSystem((
         prop_obj_space, # centring + displacing focus plalne

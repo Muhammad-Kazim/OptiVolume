@@ -1,4 +1,4 @@
-"""OpticalSystem and Modulator: memory, hooks and registered state (C1, C3)."""
+"""OpticalSystem and Transmission: memory, hooks and registered state (C1, C3)."""
 import torch
 from torch import nn
 
@@ -10,9 +10,9 @@ SPACING = (1e-6, 1e-6)
 
 def _system(record=False):
     return optics.OpticalSystem((
-        optics.FreeSpacePropagator(WL, SPACING, 10e-6),
-        optics.utils.Modulator(torch.full((16, 16), 0.5, dtype=torch.complex64)),
-        optics.utils.PixelIntegrator(2),
+        optics.AngularSpectrum(WL, SPACING, 10e-6),
+        optics.Transmission(torch.full((16, 16), 0.5, dtype=torch.complex64)),
+        optics.PixelIntegrator(2),
     ), record=record)
 
 
@@ -40,7 +40,7 @@ def test_system_runs_module_hooks():
 
 def test_modulator_registers_operator():
     op = torch.ones(4, 4, dtype=torch.complex64)
-    assert "operator" in dict(optics.utils.Modulator(op).named_buffers())
-    assert "operator" in dict(optics.utils.Modulator(op, trainable=True).named_parameters())
+    assert "operator" in dict(optics.Transmission(op).named_buffers())
+    assert "operator" in dict(optics.Transmission(op, trainable=True).named_parameters())
     param = nn.Parameter(op.clone())
-    assert optics.utils.Modulator(param).operator is param
+    assert optics.Transmission(param).operator is param

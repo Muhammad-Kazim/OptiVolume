@@ -20,10 +20,10 @@ def _energy(field, spacing):
 
 def test_magnification_energy():
     field, s0 = _bandlimited(), (100e-9, 100e-9)
-    mag = optics.utils.Magnification(40)
+    mag = optics.Magnification(40)
     assert _energy(mag(field), mag.output_spacing(s0)) == pytest.approx(_energy(field, s0), rel=1e-9)
     for method, tol in (("fourier", 1e-9), ("bilinear", 2e-2)):
-        system = optics.OpticalSystem((mag, optics.utils.Resample(2, method=method)))
+        system = optics.OpticalSystem((mag, optics.Resample(2, method=method)))
         out = system(field)
         assert out.shape == (64, 64)
         assert _energy(out, system.output_spacing(s0)) == pytest.approx(_energy(field, s0), rel=tol)
@@ -33,19 +33,19 @@ def test_resample_fourier_exact():
     n, period = 16, 8
     x = torch.arange(n, dtype=torch.float64)
     field = torch.exp(1j * 2 * math.pi * (x[:, None] + 2 * x[None, :]) / period)
-    up = optics.utils.Resample(2.5, method="fourier")(field)
+    up = optics.Resample(2.5, method="fourier")(field)
     xo = torch.arange(40, dtype=torch.float64) / 2.5
     expected = torch.exp(1j * 2 * math.pi * (xo[:, None] + 2 * xo[None, :]) / period)
     torch.testing.assert_close(up, expected)
     # Downsampling a band-limited field back gives the original samples.
-    torch.testing.assert_close(optics.utils.Resample(0.4, method="fourier")(up), field)
+    torch.testing.assert_close(optics.Resample(0.4, method="fourier")(up), field)
 
 
 def test_output_spacing_chain():
     system = optics.OpticalSystem((
-        optics.utils.Magnification(40),
-        optics.utils.Resample(2),
-        optics.utils.PixelIntegrator(2.5),
+        optics.Magnification(40),
+        optics.Resample(2),
+        optics.PixelIntegrator(2.5),
     ))
     assert system.output_spacing(100e-9) == pytest.approx((5e-6, 5e-6))
 
@@ -53,9 +53,9 @@ def test_output_spacing_chain():
 def test_blur_active_and_differentiable():
     field = _bandlimited(seed=3).to(torch.complex64)
     spacing = (100e-9, 100e-9)
-    assert torch.equal(optics.utils.PartialCoherenceBlur(spacing)(field), field)  # sigma = 0: no-op
+    assert torch.equal(optics.PartialCoherenceBlur(spacing)(field), field)  # sigma = 0: no-op
 
-    blur = optics.utils.PartialCoherenceBlur(spacing, angular_spread=0.1, defocus=2e-6)  # sigma = 2 samples
+    blur = optics.PartialCoherenceBlur(spacing, angular_spread=0.1, defocus=2e-6)  # sigma = 2 samples
     out = blur(field)
     assert (out - field).abs().max() > 1e-2
     out.abs().sum().backward()

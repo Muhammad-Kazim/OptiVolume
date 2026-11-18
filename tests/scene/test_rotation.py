@@ -14,7 +14,7 @@ def _grid():
 
 def _bar(rotation_angle, softness=1e-7):
     """A 3 µm x 1 µm bar along x, rotated about z."""
-    return scene.shapes.Cube(CENTER.clone(), torch.tensor([3e-6, 1e-6, 1e-6]), torch.tensor(1.0),
+    return scene.shapes.Cuboid(CENTER.clone(), torch.tensor([3e-6, 1e-6, 1e-6]), torch.tensor(1.0),
                              softness=softness, rotation_axis=(0, 0, 1), rotation_angle=rotation_angle)
 
 
@@ -27,10 +27,10 @@ def test_rotation_right_handed():
     # A marker at +x from the centre ends up at +y after +90 degrees about z, for both kinds of object.
     grid = _grid()
     offset = torch.tensor([1.5e-6, 0., 0.])
-    marker = scene.shapes.Cube(CENTER + offset, torch.tensor(0.8e-6), torch.tensor(1.0), softness=1e-7)
+    marker = scene.shapes.Cuboid(CENTER + offset, torch.tensor(0.8e-6), torch.tensor(1.0), softness=1e-7)
     with torch.no_grad():
         still = marker(grid)
-        vox = scene.VoxelVolume(SHAPE, SPACING, still + 1.0, n0=1.0, rotation_angle=90., object_center=CENTER.tolist())
+        vox = scene.VoxelVolume(SHAPE, SPACING, still + 1.0, n_medium=1.0, rotation_angle=90., object_center=CENTER.tolist())
         moved_vox = _centroid(vox(grid) - 1.0, grid) - CENTER
     expected = torch.tensor([0., 1.5e-6, 0.])
     torch.testing.assert_close(moved_vox, expected, atol=0.05e-6, rtol=0)
@@ -51,7 +51,7 @@ def test_rotation_convention():
     with torch.no_grad():
         analytic = _bar(30.)(grid)
         voxels = _bar(0.)(grid)
-        sampled = scene.VoxelVolume(SHAPE, SPACING, voxels + 1.0, n0=1.0, rotation_axis=(0, 0, 1),
+        sampled = scene.VoxelVolume(SHAPE, SPACING, voxels + 1.0, n_medium=1.0, rotation_axis=(0, 0, 1),
                                     rotation_angle=30., object_center=CENTER.tolist())(grid) - 1.0
     err = (sampled - analytic)[..., 1]
     assert err.abs().mean() < 0.01

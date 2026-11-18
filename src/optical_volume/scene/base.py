@@ -1,0 +1,135 @@
+"""Base class of analytic shapes: a posed signed distance function (SDF) with a refractive index.
+
+Every shape is placed by a centre and a rotation (see :func:`.rotations.world_to_object`; the
+object is rotated by R, right-handed) and described by its signed distance ``sdf(points)``:
+negative inside, positive outside, in metres. Its **occupancy** is a soft step of the SDF,
+
+    occupancy = sigmoid(-sdf / softness),
+
+with ``softness`` in metres: the 10-90 % edge width is ``2 ln 9 * softness ~ 4.39 * softness``
+for every shape and size. A shape's refractive index is a separate feature (``n``): a scalar,
+or a map that varies inside the shape (:mod:`.refractive_index`).
+:class:`~optical_volume.scene.volume.CollectionVolume` combines occupancy and refractive index.
+"""
+from typing import Optional, Tuple
+
+import torch
+from torch import Tensor, nn
+
+from .refractive_index import FunctionRI
+from .rotations import from_axis_angle, world_to_object
+
+
+#: 10-90 % width of sigmoid(-d / s) in units of s: 2 ln 9.
+EDGE_WIDTH_PER_SOFTNESS = 2 * 2.1972245773362196
+
+
+def default_softness(spacing) -> float:
+    """Softness (metres) that gives a 10-90 % edge about one voxel wide on a grid with ``spacing``."""
+    return min(float(d) for d in spacing) / EDGE_WIDTH_PER_SOFTNESS
+
+
+def _axis_angle_quat(rotation_axis, rotation_angle) -> Tensor:
+    """Unit quaternion for a rotation of ``rotation_angle`` degrees about ``rotation_axis``."""
+    axis = torch.as_tensor(rotation_axis, dtype=torch.float32)
+    angle = torch.as_tensor(rotation_angle, dtype=torch.float32)
+    return from_axis_angle(axis, torch.deg2rad(angle))
+
+
+def _rotation_rows(n: int, rotation_axes, rotation_angles):
+    """Per-shape (axis, angle) pairs for the make_* factories; defaults to no rotation."""
+    axes = torch.tensor([[0., 0., 1.]]).expand(n, 3) if rotation_axes is None else torch.as_tensor(rotation_axes)
+    angles = torch.zeros(n) if rotation_angles is None else torch.as_tensor(rotation_angles)
+    if axes.shape != (n, 3) or angles.shape != (n,):
+        raise ValueError(f"rotation_axes must be ({n}, 3) and rotation_angles ({n},), "
+                         f"got {tuple(axes.shape)} and {tuple(angles.shape)}")
+    return list(zip(axes, angles))
+
+
+def _safe_norm(v: Tensor) -> Tensor:
+    """Euclidean norm over the last axis with a finite gradient at 0 (where it is 0)."""
+    sq = (v * v).sum(-1)
+    return torch.sqrt(sq.clamp_min(1e-30)) * (sq > 0)
+
+
+def _param(value) -> nn.Parameter:
+    value = value if isinstance(value, Tensor) else torch.as_tensor(value, dtype=torch.float32)
+    return nn.Parameter(value if value.is_floating_point() else value.float())
+
+
+class Shape(nn.Module):
+    """Base class: a posed signed distance function with a refractive index.
+
+    Parameters
+    ----------
+    center : Tensor
+        Centre ``(3,)`` in metres (parameter).
+    n : float, Tensor, nn.Module or callable
+        Refractive index inside the shape. A number or scalar tensor is a parameter ``n``. A
+        map (:class:`~.refractive_index.VoxelRI`, :class:`~.refractive_index.FunctionRI`, any
+        ``nn.Module`` or callable of object-frame points ``(..., 3)``) makes it vary inside the
+        shape; it is stored as ``n_map`` and ``n`` is ``None``.
+    softness : float, optional
+        Edge softness in metres (10-90 % edge width 4.39 * softness). ``None`` (default): set
+        by the volume the shape is placed in, about one voxel (:func:`default_softness`).
+    rotation_axis : tuple of float
+        Rotation axis ``(3,)``.
+    rotation_angle : float
+        Rotation angle in degrees; the shape is rotated by it about the axis (right-handed).
+    """
+
+    def __init__(self, center, n, softness: Optional[float] = None,
+                 rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
+        super().__init__()
+        self.center = _param(center)
+        self._set_n(n)
+        self.softness = None if softness is None else float(softness)
+        self.quat = nn.Parameter(_axis_angle_quat(rotation_axis, rotation_angle))
+
+    def _set_n(self, n):
+        if isinstance(n, nn.Module) or (callable(n) and not isinstance(n, Tensor)):
+            self.n_map = n if isinstance(n, nn.Module) else FunctionRI(n)
+            self.register_parameter("n", None)
+        else:
+            self.n_map = None
+            self.n = _param(n)
+
+    def local(self, points: Tensor) -> Tensor:
+        """Object-frame coordinates ``(..., 3)`` of world points (backward map)."""
+        return world_to_object(points, self.center, self.quat)
+
+    def sdf(self, points: Tensor) -> Tensor:
+        """Signed distance (metres) at world points ``(..., 3)``: < 0 inside, > 0 outside."""
+        return self._sdf(self.local(points))
+
+    def _sdf(self, p: Tensor) -> Tensor:
+        raise NotImplementedError
+
+    def occupancy(self, points: Tensor, softness: Optional[float] = None) -> Tensor:
+        """Occupancy in [0, 1] at world points ``(..., 3)``.
+
+        ``softness`` (metres) is used only if the shape has none of its own.
+        """
+        s = self.softness if self.softness is not None else softness
+        if s is None:
+            raise ValueError("this shape has softness=None: pass softness= (metres), or evaluate it "
+                             "through a volume, which sets it from the voxel spacing")
+        return torch.sigmoid(-self.sdf(points) / s)
+
+    def forward(self, points: Tensor, softness: Optional[float] = None) -> Tensor:
+        """Occupancy at world points; see :meth:`occupancy`."""
+        return self.occupancy(points, softness)
+
+    def refractive_index(self, points: Tensor) -> Tensor:
+        """Refractive index at world points ``(..., 3)``: the scalar ``n`` broadcast, or the
+        map evaluated at the object-frame coordinates (so it moves and rotates with the shape)."""
+        if self.n_map is not None:
+            return self.n_map(self.local(points))
+        return self.n.expand(points.shape[:-1])
+
+    def set_quat(self, rotation_axis, rotation_angle):
+        """Set the orientation in place: axis ``(3,)`` and angle in degrees."""
+        # Copy in place: replacing the Parameter would detach it from existing optimizers.
+        with torch.no_grad():
+            self.quat.copy_(_axis_angle_quat(rotation_axis, rotation_angle))
+        return self

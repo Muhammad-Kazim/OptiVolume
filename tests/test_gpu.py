@@ -49,16 +49,16 @@ def centre_mean(img):
 
 def _elements():
     return {
-        "pixel_integer": (optics.utils.PixelIntegrator(3), "real"),
-        "pixel_fractional_offset": (optics.utils.PixelIntegrator(pixel_size=6e-6, spacing=2.5e-6, offset=(3e-7, -2e-7)), "real"),
-        "intensity": (optics.utils.Intensity(), "complex"),
-        "magnification": (optics.utils.Magnification(40), "complex"),
-        "resample_fourier": (optics.utils.Resample(2), "complex"),
-        "resample_bilinear": (optics.utils.Resample(2, method="bilinear"), "complex"),
-        "coherence_blur": (optics.utils.PartialCoherenceBlur((1e-7, 1e-7), sigma0=5e-8, angular_spread=0.05, defocus=5e-6), "complex"),
+        "pixel_integer": (optics.PixelIntegrator(3), "real"),
+        "pixel_fractional_offset": (optics.PixelIntegrator(pixel_size=6e-6, spacing=2.5e-6, offset=(3e-7, -2e-7)), "real"),
+        "intensity": (optics.Intensity(), "complex"),
+        "magnification": (optics.Magnification(40), "complex"),
+        "resample_fourier": (optics.Resample(2), "complex"),
+        "resample_bilinear": (optics.Resample(2, method="bilinear"), "complex"),
+        "coherence_blur": (optics.PartialCoherenceBlur((1e-7, 1e-7), sigma0=5e-8, angular_spread=0.05, defocus=5e-6), "complex"),
         "binary_mask": (optics.BinaryPhaseMask(WL, 12e-6, (2e-6, 2e-6), (96, 96), 100e-9, 0.6, 1.46, seed=0), "complex"),
-        "free_space": (optics.FreeSpacePropagator(WL, (2e-6, 2e-6), 1.43e-3, padding=32), "complex"),
-        "lens": (optics.F4ImagingSystem(WL, (1e-7, 1e-7), (96, 96), 0.7), "complex"),
+        "free_space": (optics.AngularSpectrum(WL, (2e-6, 2e-6), 1.43e-3, padding=32), "complex"),
+        "lens": (optics.FourFSystem(WL, (1e-7, 1e-7), (96, 96), 0.7), "complex"),
     }
 
 
@@ -90,15 +90,15 @@ def _grad_cases():
     field = torch.polar(torch.rand(64, 64, generator=g) + 0.5, torch.rand(64, 64, generator=g))
     mask = optics.BinaryPhaseMask(WL, 12e-6, (2e-6, 2e-6), (64, 64), 100e-9, 0.6, 1.46, seed=0)
     return {
-        "pixel_offset": (optics.utils.PixelIntegrator(pixel_size=6e-6, spacing=2.5e-6, offset=(3e-7, -2e-7)),
+        "pixel_offset": (optics.PixelIntegrator(pixel_size=6e-6, spacing=2.5e-6, offset=(3e-7, -2e-7)),
                          torch.rand(64, 64, generator=g), ["offset"]),
-        "coherence_blur": (optics.utils.PartialCoherenceBlur((1e-7, 1e-7), sigma0=5e-8, angular_spread=0.05, defocus=5e-6),
+        "coherence_blur": (optics.PartialCoherenceBlur((1e-7, 1e-7), sigma0=5e-8, angular_spread=0.05, defocus=5e-6),
                            field, ["sigma0", "angular_spread", "defocus"]),
-        "mask_height": (optics.OpticalSystem((mask, optics.FreeSpacePropagator(WL, (2e-6, 2e-6), 1.43e-3, padding=16))),
+        "mask_height": (optics.OpticalSystem((mask, optics.AngularSpectrum(WL, (2e-6, 2e-6), 1.43e-3, padding=16))),
                         field, ["elements.0.height"]),
-        "propagation_distance": (optics.FreeSpacePropagator(WL, (2e-6, 2e-6), 1.43e-3, padding=16),
+        "propagation_distance": (optics.AngularSpectrum(WL, (2e-6, 2e-6), 1.43e-3, padding=16),
                                  field, ["distance"]),
-        "lens_na": (optics.F4ImagingSystem(WL, (1e-7, 1e-7), (64, 64), 0.6), field, ["NA"]),
+        "lens_na": (optics.FourFSystem(WL, (1e-7, 1e-7), (64, 64), 0.6), field, ["NA"]),
     }
 
 
@@ -142,7 +142,7 @@ def _scenes():
     c = torch.full((3,), (n - 1) * d / 2)
     coll = scene.CollectionVolume((n, n, n), (d, d, d), 1.33)
     coll.add([scene.shapes.Slab(c.clone(), torch.tensor([0.2, 0.1, 1.0]), torch.tensor(1.0e-6), 1.36),
-              scene.shapes.Cube(c.clone(), torch.tensor([1.6e-6, 1.0e-6, 0.8e-6]), torch.tensor(1.40),
+              scene.shapes.Cuboid(c.clone(), torch.tensor([1.6e-6, 1.0e-6, 0.8e-6]), torch.tensor(1.40),
                                 rotation_axis=(1., 1., 0.), rotation_angle=25.),
               scene.shapes.Ellipsoid(c + 0.6e-6, torch.tensor([0.9e-6, 0.6e-6, 0.4e-6]), torch.tensor(1.45),
                                      rotation_axis=(0., 1., 1.), rotation_angle=40.),
@@ -150,7 +150,7 @@ def _scenes():
                   1.42 + 0.04 * torch.rand(8, 8, 8, generator=torch.Generator().manual_seed(3)), 0.15e-6))])
     vox = scene.VoxelVolume((n, n, n), (d, d, d),
                             1.33 + 0.05 * torch.rand(n, n, n, generator=torch.Generator().manual_seed(4)),
-                            n0=1.33, rotation_axis=(1., 2., 3.), rotation_angle=35.)
+                            n_medium=1.33, rotation_axis=(1., 2., 3.), rotation_angle=35.)
     grid = scene.volume.Grid((n, n, n), (d, d, d))
     return {"collection": (coll, lambda m: m()),
             "voxel_volume": (vox, lambda m: m(grid.grid.to(m.volume.device)))}
@@ -183,7 +183,7 @@ def test_scene_matches_cpu(name):
 
 def test_camera_matches_cpu():
     torch.manual_seed(0)
-    cam = pipelines.CodedPhaseCamV3(WL, (1.5e-6, 1.5e-6), (64, 64), padding=16)
+    cam = pipelines.CodedWavefrontSensor(WL, (1.5e-6, 1.5e-6), (64, 64), padding=16)
     field = torch.exp(1j * torch.rand(64, 64)).to(torch.complex64)
     gpu, cpu = run_both(cam, field)
     assert_matches_cpu(gpu, cpu)
@@ -196,17 +196,17 @@ def test_camera_matches_cpu():
 def _cwfs_chain(obj_spacing, shape, NA, mag, eff_mag, dist, tile, height, sigma, pixel, n_bg=1.51, pad=512):
     """The coded-wavefront-sensing chain of examples 04 and 06 (object side to camera pixels)."""
     img_spacing = [obj_spacing[0] * mag / eff_mag] * 2
-    to_mask = optics.FreeSpacePropagator(WL, img_spacing, dist, direction="backward", padding=pad)
-    to_sensor = optics.FreeSpacePropagator(WL, img_spacing, dist, direction="forward", padding=pad)
+    to_mask = optics.AngularSpectrum(WL, img_spacing, dist, direction="backward", padding=pad)
+    to_sensor = optics.AngularSpectrum(WL, img_spacing, dist, direction="forward", padding=pad)
     to_sensor.distance = to_mask.distance
     mask = optics.BinaryPhaseMask(WL, tile, img_spacing, [x * eff_mag for x in shape], height, sigma, 1.46, seed=0)
     system = optics.OpticalSystem((
-        optics.FreeSpacePropagator(WL / n_bg, obj_spacing[:2], shape[2] * obj_spacing[2] / 2 - 1e-9,
+        optics.AngularSpectrum(WL / n_bg, obj_spacing[:2], shape[2] * obj_spacing[2] / 2 - 1e-9,
                                    direction="backward", padding=pad),
-        optics.F4ImagingSystem(WL, obj_spacing, shape, NA),
-        optics.utils.Magnification(mag), optics.utils.Resample(eff_mag),
+        optics.FourFSystem(WL, obj_spacing, shape, NA),
+        optics.Magnification(mag), optics.Resample(eff_mag),
         to_mask, mask, to_sensor,
-        optics.utils.Intensity(), optics.utils.PixelIntegrator(pixel_size=pixel, spacing=img_spacing)))
+        optics.Intensity(), optics.PixelIntegrator(pixel_size=pixel, spacing=img_spacing)))
     return system, mask, to_mask
 
 
@@ -215,7 +215,7 @@ def _ex04():
     vol = scene.CollectionVolume(shape, spacing, 1.51)
     vol.add([scene.shapes.Sphere(torch.tensor((20e-6, 45e-6, 3e-6)), torch.tensor(5e-6), torch.tensor(1.46)),
              scene.shapes.Sphere(torch.tensor((30e-6, 20e-6, 5e-6)), torch.tensor(3e-6), torch.tensor(1.46))])
-    bpm = optics.VolumePropagator(WL, spacing, 1.51)
+    bpm = optics.BeamPropagation(WL, spacing, 1.51)
     system, mask, to_mask = _cwfs_chain(spacing, shape, NA=0.7, mag=40, eff_mag=2, dist=1.43e-3,
                                         tile=12e-6, height=100e-9, sigma=0.6, pixel=6e-6)
     return vol, bpm, system, mask, to_mask, spacing, shape
@@ -262,10 +262,10 @@ def test_example06_voxel_chain():
     shape, spacing = [n] * 3, [d] * 3
     voxels = torch.full(shape, 1.51)
     voxels[40:88, 30:98, 34:94] += 0.03
-    vol = scene.VoxelVolume(shape, spacing, voxels, n0=1.51, rotation_axis=[0, 1, 0], rotation_angle=45,
+    vol = scene.VoxelVolume(shape, spacing, voxels, n_medium=1.51, rotation_axis=[0, 1, 0], rotation_angle=45,
                             object_center=[d * n / 2] * 3)
     grid = scene.volume.Grid(shape, spacing)
-    bpm = optics.VolumePropagator(WL, spacing, 1.51)
+    bpm = optics.BeamPropagation(WL, spacing, 1.51)
     system, _, _ = _cwfs_chain(spacing, shape, NA=0.4, mag=4, eff_mag=2, dist=2.5e-3,
                                tile=12e-6, height=570e-9, sigma=0.9, pixel=3e-6, pad=128)
     with torch.no_grad():
@@ -283,21 +283,21 @@ def test_example06_voxel_chain():
 
 def test_example07_camera_chain():
     # Example 07's image formation (one time step): object-side resampling, lens, Magnification(40),
-    # CodedPhaseCamV3 with 6 µm pixels on the 3 µm image grid.
+    # CodedWavefrontSensor with 6 µm pixels on the 3 µm image grid.
     spacing, shape, eff = [150e-9, 150e-9, 100e-9], [600, 600, 100], 2
     img_spacing, img_shape = [s * 20 for s in spacing[:2]], [x * eff for x in shape]
     vol = scene.CollectionVolume(shape, spacing, 1.51)
     vol.add([scene.shapes.Sphere(torch.tensor((60e-6, 20e-6, 5e-6)), torch.tensor(7e-6), torch.tensor(1.46)),
              scene.shapes.Sphere(torch.tensor((40e-6, 33e-6, 5e-6)), torch.tensor(9e-6), torch.tensor(1.46))])
-    bpm = optics.VolumePropagator(WL, spacing, 1.51)
+    bpm = optics.BeamPropagation(WL, spacing, 1.51)
     torch.manual_seed(0)
     system = optics.OpticalSystem((
-        optics.FreeSpacePropagator(WL / 1.51, spacing[:2], shape[2] * spacing[2] / 2 - 1e-9, direction="backward", padding=512),
-        optics.utils.PartialCoherenceBlur(spacing[:2]),
-        optics.utils.Resample(eff),
-        optics.F4ImagingSystem(WL, [x / eff for x in spacing], img_shape, 0.75),
-        optics.utils.Magnification(40),
-        pipelines.CodedPhaseCamV3(wavelength=WL, spacing=img_spacing, shape=img_shape, padding=512, pad_mode="edge")))
+        optics.AngularSpectrum(WL / 1.51, spacing[:2], shape[2] * spacing[2] / 2 - 1e-9, direction="backward", padding=512),
+        optics.PartialCoherenceBlur(spacing[:2]),
+        optics.Resample(eff),
+        optics.FourFSystem(WL, [x / eff for x in spacing], img_shape, 0.75),
+        optics.Magnification(40),
+        pipelines.CodedWavefrontSensor(wavelength=WL, spacing=img_spacing, shape=img_shape, padding=512, pad_mode="edge")))
     with torch.no_grad():
         img_cpu = system(bpm(vol()).to(torch.complex64))
         vol.to(DEVICE), bpm.to(DEVICE), system.to(DEVICE)
