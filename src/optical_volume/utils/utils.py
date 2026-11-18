@@ -29,23 +29,36 @@ def load_pkl(filename):
         print('File does not exist.')
         
 
-def normalization(field, totype='int16'):
-    """normalizes field to 0-1.
+def normalization(field, totype='uint16'):
+    """Scale a real 2D array linearly to the full range of an unsigned integer type.
 
-    Args:
-        field (float): 2d floating point arrays.
-        totype (str): 'int16' or 'int8'
+    Parameters
+    ----------
+    field : array_like
+        Real values (any units).
+    totype : {'uint16', 'uint8'}
+        Output type: the minimum maps to 0, the maximum to ``2**bits - 1``.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``field`` rescaled and rounded to ``totype``. A constant field gives zeros.
+
+    Raises
+    ------
+    ValueError
+        For any other ``totype`` (the old names ``'int16'`` and ``'int8'`` were misleading:
+        they returned unsigned types).
     """
-    
-    field = (field - field.min())/(field.max() - field.min())
-    
-    if totype == 'int16':
-        return np.array(field*(2**16) - 1, dtype=np.uint16)
-    elif totype == 'int8':
-        return np.array(field*(2**8) - 1, dtype=np.uint8)
-    else:
-        print('Wrong totype')
-        
+    dtypes = {'uint16': np.uint16, 'uint8': np.uint8}
+    if totype not in dtypes:
+        raise ValueError(f"totype must be 'uint16' or 'uint8', got {totype!r}")
+    field = np.asarray(field, dtype=np.float64)
+    span = field.max() - field.min()
+    unit = (field - field.min()) / span if span > 0 else np.zeros_like(field)
+    top = np.iinfo(dtypes[totype]).max                       # 2**bits - 1
+    return np.rint(unit * top).astype(dtypes[totype])
+
 
 def plot(imgs, **imshow_kwargs):
     from matplotlib import pyplot as plt  # optional dependency: pip install optical-volume[plot]
@@ -80,17 +93,37 @@ def fit_linear(img: Tensor):
     return (abc, abc[0]*X + abc[1]*Y + abc[2])
 
 
-def fit_quadratic(img: Tensor):
-    
-    nx, ny = img.shape
-    
-    X, Y = torch.meshgrid(torch.arange(nx), torch.arange(ny), indexing='ij')
-    A = torch.hstack([X.reshape(-1, 1)**2, Y.reshape(-1, 1)**2, X.reshape(-1, 1)*Y.reshape(-1, 1), X.reshape(-1, 1), Y.reshape(-1, 1), torch.ones([nx, ny]).reshape(-1, 1)])
+def fit_quadratic(img: Tensor, spacing=None):
+    """Least-squares fit of a quadratic surface to a 2D image.
 
-    pinv = torch.linalg.inv(A.T @ A) @ A.T
-    abc = pinv @ img.reshape(-1, 1)
-    
-    return (abc, abc[0]*X**2 + abc[0]*Y**2 + abc[0]*X*Y + abc[0]*X + abc[1]*Y + abc[2])
+    Fits ``a x^2 + b y^2 + c x y + d x + e y + f`` to ``img[i, j]`` at ``x = i * dx``,
+    ``y = j * dy`` (arrays are indexed ``[x, y]``).
+
+    Parameters
+    ----------
+    img : Tensor
+        ``(nx, ny)`` real image.
+    spacing : float or tuple of float, optional
+        Sample spacing ``(dx, dy)`` in metres. Default: coordinates in samples (``dx = dy = 1``).
+
+    Returns
+    -------
+    coeffs : Tensor
+        ``(6,)`` coefficients ``(a, b, c, d, e, f)``, in units of the image per (metre or
+        sample) to the power of the term's degree.
+    surface : Tensor
+        ``(nx, ny)`` fitted surface.
+    """
+    nx, ny = img.shape
+    dtype = img.dtype if img.is_floating_point() else torch.float32
+    dx, dy = (1.0, 1.0) if spacing is None else ((float(spacing),) * 2 if isinstance(spacing, (int, float)) else tuple(map(float, spacing)))
+    x = torch.arange(nx, dtype=dtype, device=img.device) * dx
+    y = torch.arange(ny, dtype=dtype, device=img.device) * dy
+    X, Y = torch.meshgrid(x, y, indexing='ij')
+    basis = torch.stack([X**2, Y**2, X * Y, X, Y, torch.ones_like(X)], dim=-1)    # (nx, ny, 6)
+    # lstsq solves the normal equations without forming A^T A, which would square the condition number.
+    coeffs = torch.linalg.lstsq(basis.reshape(-1, 6), img.reshape(-1, 1).to(dtype)).solution.reshape(6)
+    return coeffs, basis @ coeffs
 
 
 def torch_grad_optr(image, mode='edge'):
