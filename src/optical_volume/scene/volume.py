@@ -35,21 +35,21 @@ class CollectionVolume(Grid):
     spacing : tuple of float
         Sample spacing ``(dx, dy, dz)`` in metres; sample ``(i, j, k)`` sits at
         ``(i*dx, j*dy, k*dz)``.
-    n_bg : float
+    n_medium : float
         Background refractive index.
 
     Notes
     -----
     Shapes are combined in the order they were added, each painting over what is there:
-    ``n <- n * (1 - occupancy) + RI * occupancy``. Where shapes overlap, the later one wins.
+    ``n <- n * (1 - occupancy) + n_shape * occupancy``, with each shape's index ``n_shape``. Where shapes overlap, the later one wins.
     Shapes with ``softness=None`` get :func:`~optical_volume.scene.shapes.default_softness`
     of this grid, an edge about one voxel wide.
     """
 
-    def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], n_bg: float):
+    def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], n_medium: float):
         super().__init__(shape, spacing)
 
-        self.n_bg = n_bg
+        self.n_medium = n_medium
         self.shapes = nn.ModuleList()
 
     def add(self, shape: List):
@@ -62,7 +62,7 @@ class CollectionVolume(Grid):
 
     def forward(self):
         spacing = min(self.dx, self.dy, self.dz)
-        field = torch.full_like(self.grid[..., 0], self.n_bg)
+        field = torch.full_like(self.grid[..., 0], self.n_medium)
         for shape in self.shapes:
             if shape.softness is not None and shape.softness < 0.01 * spacing:
                 warnings.warn(f"{type(shape).__name__} softness {shape.softness:.3g} m is below 1 % of the "
@@ -87,8 +87,8 @@ class VoxelVolume(nn.Module):
         Voxel size ``(dx, dy, dz)`` in metres. Voxel ``(i, j, k)`` sits at
         ``(i*dx, j*dy, k*dz)``.
     volume : Tensor, optional
-        Refractive indices of shape ``shape``. Default: filled with ``n0``.
-    n0 : float
+        Refractive indices of shape ``shape``. Default: filled with ``n_medium``.
+    n_medium : float
         Background refractive index of the medium around the object (keyword only,
         required). Fills an empty volume.
     rotation_axis : tuple of float
@@ -105,20 +105,20 @@ class VoxelVolume(nn.Module):
     -----
     ``forward(grid)`` samples the rotated volume at the points ``grid (..., 3)`` (metres)
     with trilinear interpolation (a backward map, so there are no holes). Points that map
-    outside the voxel box are the background ``n0``: the difference ``volume - n0`` is
-    interpolated with zero padding and ``n0`` added back.
+    outside the voxel box are the background ``n_medium``: the difference ``volume - n_medium`` is
+    interpolated with zero padding and ``n_medium`` added back.
     """
 
     def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], volume: Tensor = None,
-                 *, n0: float, rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.,
+                 *, n_medium: float, rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.,
                  object_center: Tuple = None) -> None:
         super().__init__()
 
         self.shape = tuple(shape)
         self.spacing = tuple(spacing)
-        self.n0 = n0
+        self.n_medium = n_medium
 
-        self.volume = torch.nn.Parameter(torch.ones(self.shape).float()*self.n0) if volume is None else self.set_volume(volume)
+        self.volume = torch.nn.Parameter(torch.ones(self.shape).float()*self.n_medium) if volume is None else self.set_volume(volume)
         self.quat = torch.nn.Parameter(from_axis_angle(torch.tensor(rotation_axis).float(), 
                                                        torch.deg2rad(torch.tensor(rotation_angle))))
         if object_center is None:
@@ -149,9 +149,9 @@ class VoxelVolume(nn.Module):
         pts_normalized = pts_normalized.unsqueeze(0)
 
         # Interpolate the contrast to the background with zero padding, so points outside the
-        # box are exactly n0. Repeating the edge voxels ('border') would smear an object that
+        # box are exactly n_medium. Repeating the edge voxels ('border') would smear an object that
         # touches the box edge out to the grid boundary (A9).
-        contrast = (self.volume - self.n0).permute(2, 1, 0)
+        contrast = (self.volume - self.n_medium).permute(2, 1, 0)
 
         sampled = F.grid_sample(
             contrast.unsqueeze(0).unsqueeze(0),  # (N, C, D, H, W)
@@ -161,4 +161,4 @@ class VoxelVolume(nn.Module):
             align_corners=True
         )
 
-        return sampled.squeeze() + self.n0
+        return sampled.squeeze() + self.n_medium

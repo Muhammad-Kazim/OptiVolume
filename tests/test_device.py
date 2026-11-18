@@ -27,7 +27,7 @@ def _modules():
         "custom_mask": optics.HeightMapPhaseMask(WL, 4e-6, SPACING, SHAPE, torch.zeros(4, 4), 1.0, 1.46),
         "lens": optics.FourFSystem(WL, SPACING[:2], SHAPE[:2], NA=0.5),
         "collection": collection,
-        "voxels": scene.VoxelVolume(SHAPE, SPACING, n0=1.33),
+        "voxels": scene.VoxelVolume(SHAPE, SPACING, n_medium=1.33),
         "camera": pipelines.CodedWavefrontSensor(WL, (1.5e-6, 1.5e-6), (64, 64), padding=16),
         "detector": optics.OpticalSystem((
             optics.Magnification(40), optics.Resample(2), optics.Intensity(),

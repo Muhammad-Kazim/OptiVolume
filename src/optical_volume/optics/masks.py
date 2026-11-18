@@ -44,11 +44,11 @@ class BinaryPhaseMask(nn.Module):
         Step height of a raised tile, in metres (parameter).
     sigma : float
         Width of the Gaussian edge blur, in pixels (parameter, stored as its log).
-    RI_PM : float
+    n_mask : float
         Refractive index of the mask material.
     prob : float
         A tile is raised when its uniform draw exceeds ``prob``.
-    RI_bg : float
+    n_medium : float
         Refractive index of the surrounding medium.
     tile_map : Tensor, optional
         ``(num_x, num_y)`` 0/1 map of raised tiles. If given, nothing is drawn.
@@ -67,8 +67,8 @@ class BinaryPhaseMask(nn.Module):
     """
 
     def __init__(self, wavelength: float, side_length: float, spacing: Tuple[float, float, float],
-                 shape: Tuple[int, int, int], height: float, sigma: float, RI_PM: float, prob: float = 0.5,
-                 RI_bg: float = 1., tile_map: Optional[Tensor] = None, seed: Optional[int] = None,
+                 shape: Tuple[int, int, int], height: float, sigma: float, n_mask: float, prob: float = 0.5,
+                 n_medium: float = 1., tile_map: Optional[Tensor] = None, seed: Optional[int] = None,
                  generator: Optional[torch.Generator] = None):
 
         super().__init__()
@@ -76,9 +76,9 @@ class BinaryPhaseMask(nn.Module):
         self.wl = wavelength
         self.Nx, self.Ny = shape[:2] # 100x100
         self.tile_size_px, (self.num_x, self.num_y) = _tile_layout(side_length, spacing, shape)
-        self.RI_PM = RI_PM
+        self.n_mask = n_mask
 
-        self.n0 = RI_bg
+        self.n_medium = n_medium
 
         self.height = nn.Parameter(torch.tensor(height))
         self.log_sigma = nn.Parameter(torch.log(torch.tensor(sigma)))
@@ -115,7 +115,7 @@ class BinaryPhaseMask(nn.Module):
 
         mask = self.mask * self.height
 
-        mask = mask*self.RI_PM + (mask.max() - mask)*self.n0
+        mask = mask*self.n_mask + (mask.max() - mask)*self.n_medium
         mask = CustomGaussianBlur(mask.unsqueeze(0).unsqueeze(0), self.sigma).squeeze()
 
         return field*torch.exp(1j*(2*torch.pi/self.wl)*mask)
@@ -151,27 +151,27 @@ class HeightMapPhaseMask(nn.Module):
         ``(num_x, num_y)`` tile heights in metres (parameter).
     sigma : float
         Width of the Gaussian edge blur, in pixels (parameter, stored as its log).
-    RI_PM : float
+    n_mask : float
         Refractive index of the mask material.
     maxheight : float
         Heights are clamped to ``[-maxheight, maxheight]``, in metres.
-    RI_bg : float
+    n_medium : float
         Refractive index of the surrounding medium.
     """
 
     def __init__(self, wavelength: float, side_length: float, spacing: Tuple[float, float, float],
-                 shape: Tuple[int, int, int], heightmap: Tensor, sigma: float, RI_PM: float, maxheight: float = 1e-6,
-                 RI_bg: float = 1.):
+                 shape: Tuple[int, int, int], heightmap: Tensor, sigma: float, n_mask: float, maxheight: float = 1e-6,
+                 n_medium: float = 1.):
 
         super().__init__()
 
         self.wl = wavelength
         self.Nx, self.Ny = shape[:2] # 100x100
         self.tile_size_px, (self.num_x, self.num_y) = _tile_layout(side_length, spacing, shape)
-        self.RI_PM = RI_PM
+        self.n_mask = n_mask
         self.max_height = maxheight
 
-        self.n0 = RI_bg
+        self.n_medium = n_medium
 
         if not isinstance(heightmap, Tensor):
             raise TypeError("heightmap must be a Tensor")
@@ -191,7 +191,7 @@ class HeightMapPhaseMask(nn.Module):
         mask = torch.clamp(self.heightmap, min=-1*self.max_height, max=self.max_height) # height cannot be negative
         mask = _expand_tiles(mask, self.tile_size_px, (self.Nx, self.Ny))
 
-        mask = mask*self.RI_PM + (mask.max() - mask)*self.n0
+        mask = mask*self.n_mask + (mask.max() - mask)*self.n_medium
         mask = CustomGaussianBlur(mask.unsqueeze(0).unsqueeze(0), self.sigma).squeeze()
 
         return field*torch.exp(1j*(2*torch.pi/self.wl)*mask)

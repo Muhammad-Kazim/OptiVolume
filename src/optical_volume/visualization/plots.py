@@ -4,23 +4,23 @@ import numpy as np
 import torchvision.transforms.functional as TF
 
 
-def visualize_grid(RI_distribution, n_background=1., factor=10, angle=(30, 30, 0)):
+def visualize_grid(n, n_medium=1., factor=10, angle=(30, 30, 0)):
     """3d-grid visualization. Will kill program for large grid.
 
     Args:
-        RI_distribution (float): 3d space with RI at each point.
-        n_background (float): background RI.
+        n (float): 3d space with RI at each point.
+        n_medium (float): background RI.
         factor (int): downsampling, use every factor-th sample.  
     """
-    x = np.arange(RI_distribution.shape[0]//factor)[:, None, None]
-    y = np.arange(RI_distribution.shape[1]//factor)[None, :, None]
-    z = np.arange(RI_distribution.shape[2]//factor)[None, None, :]
+    x = np.arange(n.shape[0]//factor)[:, None, None]
+    y = np.arange(n.shape[1]//factor)[None, :, None]
+    z = np.arange(n.shape[2]//factor)[None, None, :]
     x, y, z = np.broadcast_arrays(x, y, z)
 
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
 
-    ax.scatter(x, y, z, s=(np.abs(RI_distribution-n_background))[::factor, ::factor, ::factor]*factor*10, 
+    ax.scatter(x, y, z, s=(np.abs(n-n_medium))[::factor, ::factor, ::factor]*factor*10, 
                alpha=0.25)
     
     ax.set_xlabel('X')

@@ -18,7 +18,7 @@ def test_ri_map_constant_equals_scalar():
     # A uniform voxel map gives the same volume as the scalar refractive index.
     scalar = scene.shapes.Sphere(C.clone(), torch.tensor(1e-6), torch.tensor(1.5))
     mapped = scene.shapes.Sphere(C.clone(), torch.tensor(1e-6), scene.VoxelRI(torch.full((5, 5, 5), 1.5), 0.5e-6))
-    assert mapped.RI is None and isinstance(mapped.ri_map, scene.VoxelRI)
+    assert mapped.n is None and isinstance(mapped.n_map, scene.VoxelRI)
     with torch.no_grad():
         torch.testing.assert_close(_volume(mapped)(), _volume(scalar)())
 
@@ -41,7 +41,7 @@ def test_ri_map_gradients():
     sphere = scene.shapes.Sphere(C.clone(), torch.tensor(0.8e-6), scene.VoxelRI(values, 0.2e-6))
     w = torch.rand(N, N, N, generator=torch.Generator().manual_seed(0)) - 0.5
     (_volume(sphere)() * w).sum().backward()
-    g = sphere.ri_map.values.grad
+    g = sphere.n_map.values.grad
     assert torch.isfinite(g).all() and g.abs().sum() > 0
     corner = g[0, 0, 0].abs().item()                    # 2.6 µm from the centre, far outside the sphere
     assert corner < 1e-6 * g.abs().max().item()
@@ -52,7 +52,7 @@ def test_ri_map_gradients():
 def test_function_ri():
     # A plain function of object-frame coordinates: a gradient index along the shape's z.
     sphere = scene.shapes.Sphere(C.clone(), torch.tensor(1.2e-6), lambda p: 1.45 + 1e4 * p[..., 2])
-    assert isinstance(sphere.ri_map, scene.FunctionRI)
+    assert isinstance(sphere.n_map, scene.FunctionRI)
     with torch.no_grad():
         ri = _volume(sphere)()
     c = N // 2

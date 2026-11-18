@@ -150,7 +150,7 @@ def _scenes():
                   1.42 + 0.04 * torch.rand(8, 8, 8, generator=torch.Generator().manual_seed(3)), 0.15e-6))])
     vox = scene.VoxelVolume((n, n, n), (d, d, d),
                             1.33 + 0.05 * torch.rand(n, n, n, generator=torch.Generator().manual_seed(4)),
-                            n0=1.33, rotation_axis=(1., 2., 3.), rotation_angle=35.)
+                            n_medium=1.33, rotation_axis=(1., 2., 3.), rotation_angle=35.)
     grid = scene.volume.Grid((n, n, n), (d, d, d))
     return {"collection": (coll, lambda m: m()),
             "voxel_volume": (vox, lambda m: m(grid.grid.to(m.volume.device)))}
@@ -262,7 +262,7 @@ def test_example06_voxel_chain():
     shape, spacing = [n] * 3, [d] * 3
     voxels = torch.full(shape, 1.51)
     voxels[40:88, 30:98, 34:94] += 0.03
-    vol = scene.VoxelVolume(shape, spacing, voxels, n0=1.51, rotation_axis=[0, 1, 0], rotation_angle=45,
+    vol = scene.VoxelVolume(shape, spacing, voxels, n_medium=1.51, rotation_axis=[0, 1, 0], rotation_angle=45,
                             object_center=[d * n / 2] * 3)
     grid = scene.volume.Grid(shape, spacing)
     bpm = optics.BeamPropagation(WL, spacing, 1.51)

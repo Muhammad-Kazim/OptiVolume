@@ -161,11 +161,11 @@ class BeamPropagation(nn.Module):
         Vacuum wavelength of the source, in metres.
     spacing : tuple of float
         ``(dx, dy, dz)`` in metres. ``dz`` is the slice thickness (propagation step).
-    RI_background : float
+    n_medium : float
         Refractive index of the surrounding medium (dimensionless).
     padding : int, optional
         Pixels added on each side of the field (with ``pad_mode``) and of every slice (with the
-        background index ``RI_background``); removed from the output. ``None`` or 0 means no
+        background index ``n_medium``); removed from the output. ``None`` or 0 means no
         padding.
     pad_mode : str
         torchvision padding mode, ``'edge'`` by default.
@@ -175,7 +175,7 @@ class BeamPropagation(nn.Module):
 
     Notes
     -----
-    ``forward(RI_distribution, source=None)`` takes a volume of shape ``(..., Nx, Ny, Nz)``
+    ``forward(n, source=None)`` takes a volume of shape ``(..., Nx, Ny, Nz)``
     and returns the complex exit field ``(..., Nx, Ny)``. The input field is, in order of
     precedence: ``source`` passed to ``forward``, the field stored with
     :meth:`set_source_field` (a registered buffer, so ``.to()`` moves it), or a unit plane
@@ -186,7 +186,7 @@ class BeamPropagation(nn.Module):
         self,
         wavelength: float,
         spacing: Tuple[float, float, float],
-        RI_background: float,
+        n_medium: float,
         padding: Optional[int] = None,
         pad_mode: str = 'edge',
         evanescent: str = 'decay',
@@ -199,13 +199,13 @@ class BeamPropagation(nn.Module):
 
         self.wavelength = wavelength
         self.dx, self.dy, self.dz = spacing
-        self.n0 = RI_background
+        self.n_medium = n_medium
         self.register_buffer('source_field', None)
 
-    def forward(self, RI_distribution: Tensor, source: Optional[Tensor] = None) -> Tensor:
+    def forward(self, n: Tensor, source: Optional[Tensor] = None) -> Tensor:
 
-        Nx, Ny, Nz = RI_distribution.shape[-3:]
-        device = RI_distribution.device
+        Nx, Ny, Nz = n.shape[-3:]
+        device = n.device
 
         if source is None:
             source = self.source_field
@@ -224,13 +224,13 @@ class BeamPropagation(nn.Module):
 
         # Transfer function for one slice, built for the padded field
         k0 = 2 * torch.pi / self.wavelength
-        transfer_function = _transfer_function(field.shape[-2:], (self.dx, self.dy), self.n0 * k0,
+        transfer_function = _transfer_function(field.shape[-2:], (self.dx, self.dy), self.n_medium * k0,
                                                self.dz, self.evanescent, device)
 
         # Forward propagation
         for z in range(Nz):
             field_fft = torch.fft.fft2(field)
-            delta_n = RI_distribution[..., z] - self.n0
+            delta_n = n[..., z] - self.n_medium
             if self.PAD is not None:
                 # The pad is background medium (delta_n = 0, no extra delay), not a copy of the edge.
                 delta_n = F.pad(delta_n, (self.pad_by,) * 4)
@@ -255,7 +255,7 @@ class BeamPropagation(nn.Module):
 
         return self
 
-    def set_RI_background(self, RI_background: float):
-        self.n0 = RI_background
+    def set_n_medium(self, n_medium: float):
+        self.n_medium = n_medium
 
         return self

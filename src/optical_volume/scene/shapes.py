@@ -13,9 +13,9 @@ from .base import EDGE_WIDTH_PER_SOFTNESS, Shape, _param, _rotation_rows, _safe_
 class Sphere(Shape):
     """Sphere of ``radius`` (metres, parameter). SDF ``|p| - radius``. See :class:`Shape`."""
 
-    def __init__(self, center, radius, RI, softness: Optional[float] = None,
+    def __init__(self, center, radius, n, softness: Optional[float] = None,
                  rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
-        super().__init__(center, RI, softness, rotation_axis, rotation_angle)
+        super().__init__(center, n, softness, rotation_axis, rotation_angle)
         self.radius = _param(radius)
 
     def _sdf(self, p):
@@ -34,9 +34,9 @@ class Cuboid(Shape):
     on such a plane, rounding decides which face it belongs to (e.g. float32 vs float64).
     """
 
-    def __init__(self, center, length, RI, softness: Optional[float] = None,
+    def __init__(self, center, length, n, softness: Optional[float] = None,
                  rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
-        super().__init__(center, RI, softness, rotation_axis, rotation_angle)
+        super().__init__(center, n, softness, rotation_axis, rotation_angle)
         self.length = _param(length)
 
     def _sdf(self, p):
@@ -58,9 +58,9 @@ class Ellipsoid(Shape):
     step. At the centre (0/0) it takes its limit, ``-min(r)`` to ``-max(r)``; ``-min(r)`` is used.
     """
 
-    def __init__(self, center, radii, RI, softness: Optional[float] = None,
+    def __init__(self, center, radii, n, softness: Optional[float] = None,
                  rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
-        super().__init__(center, RI, softness, rotation_axis, rotation_angle)
+        super().__init__(center, n, softness, rotation_axis, rotation_angle)
         self.radii = _param(radii)
 
     def _sdf(self, p):
@@ -71,14 +71,14 @@ class Ellipsoid(Shape):
         return (k0 - 1) * ratio
 
 
-def make_spheres(centers: Tensor, radii: Tensor, RIs: Tensor, softness: Optional[float] = None):
-    """Build one :class:`Sphere` per row of ``centers (N, 3)``, ``radii (N,)``, ``RIs (N,)``."""
+def make_spheres(centers: Tensor, radii: Tensor, n: Tensor, softness: Optional[float] = None):
+    """Build one :class:`Sphere` per row of ``centers (N, 3)``, ``radii (N,)``, ``n (N,)``."""
     assert centers.dim() == 2, "Each row must contain sphere attributes"
-    assert RIs.size()[0] == centers.shape[0] == radii.size()[0], "Each row must contain sphere attributes"
-    return [Sphere(centers[i], radii[i], RIs[i], softness=softness) for i in range(centers.shape[0])]
+    assert n.size()[0] == centers.shape[0] == radii.size()[0], "Each row must contain sphere attributes"
+    return [Sphere(centers[i], radii[i], n[i], softness=softness) for i in range(centers.shape[0])]
 
 
-def make_cuboids(centers: Tensor, lengths: Tensor, RIs: Tensor, rotation_axes: Tensor = None,
+def make_cuboids(centers: Tensor, lengths: Tensor, n: Tensor, rotation_axes: Tensor = None,
                rotation_angles: Tensor = None, softness: Optional[float] = None):
     """Build one :class:`Cuboid` per row.
 
@@ -88,7 +88,7 @@ def make_cuboids(centers: Tensor, lengths: Tensor, RIs: Tensor, rotation_axes: T
         ``(N, 3)`` centres in metres.
     lengths : Tensor
         ``(N,)`` edge lengths or ``(N, 3)`` side lengths, in metres.
-    RIs : Tensor
+    n : Tensor
         ``(N,)`` refractive indices.
     rotation_axes : Tensor, optional
         ``(N, 3)`` rotation axes; default ``(0, 0, 1)``.
@@ -98,13 +98,13 @@ def make_cuboids(centers: Tensor, lengths: Tensor, RIs: Tensor, rotation_axes: T
         Edge softness in metres; default: set by the volume (about one voxel).
     """
     assert centers.dim() == 2, "Each row must contain cube attributes"
-    assert RIs.size()[0] == centers.shape[0] == lengths.size()[0], "Each row must contain cube attributes"
+    assert n.size()[0] == centers.shape[0] == lengths.size()[0], "Each row must contain cube attributes"
     rotations = _rotation_rows(centers.shape[0], rotation_axes, rotation_angles)
-    return [Cuboid(centers[i], lengths[i], RIs[i], softness=softness, rotation_axis=axis, rotation_angle=angle)
+    return [Cuboid(centers[i], lengths[i], n[i], softness=softness, rotation_axis=axis, rotation_angle=angle)
             for i, (axis, angle) in enumerate(rotations)]
 
 
-def make_ellipsoids(centers: Tensor, radii: Tensor, RIs: Tensor, rotation_axes: Tensor = None,
+def make_ellipsoids(centers: Tensor, radii: Tensor, n: Tensor, rotation_axes: Tensor = None,
                     rotation_angles: Tensor = None, softness: Optional[float] = None):
     """Build one :class:`Ellipsoid` per row.
 
@@ -114,7 +114,7 @@ def make_ellipsoids(centers: Tensor, radii: Tensor, RIs: Tensor, rotation_axes: 
         ``(N, 3)`` centres in metres.
     radii : Tensor
         ``(N, 3)`` semi-axes in metres.
-    RIs : Tensor
+    n : Tensor
         ``(N,)`` refractive indices.
     rotation_axes : Tensor, optional
         ``(N, 3)`` rotation axes; default ``(0, 0, 1)``.
@@ -124,9 +124,9 @@ def make_ellipsoids(centers: Tensor, radii: Tensor, RIs: Tensor, rotation_axes: 
         Edge softness in metres; default: set by the volume (about one voxel).
     """
     assert centers.dim() == radii.dim() == 2, "Each row must contain ellipsoid attributes"
-    assert RIs.size()[0] == centers.shape[0] == radii.shape[0], "Each row must contain ellipsoid attributes"
+    assert n.size()[0] == centers.shape[0] == radii.shape[0], "Each row must contain ellipsoid attributes"
     rotations = _rotation_rows(centers.shape[0], rotation_axes, rotation_angles)
-    return [Ellipsoid(centers[i], radii[i], RIs[i], softness=softness, rotation_axis=axis, rotation_angle=angle)
+    return [Ellipsoid(centers[i], radii[i], n[i], softness=softness, rotation_axis=axis, rotation_angle=angle)
             for i, (axis, angle) in enumerate(rotations)]
 
 class Slab(Shape):
@@ -140,7 +140,7 @@ class Slab(Shape):
         ``(3,)`` slab normal (parameter, any length; normalised when evaluated).
     thickness : Tensor
         Thickness in metres (parameter); the slab spans ``-t/2 <= n.(x - point) <= t/2``.
-    RI : float, Tensor, nn.Module or callable
+    n : float, Tensor, nn.Module or callable
         Refractive index inside the slab, as for :class:`Shape`.
     softness : float, optional
         Edge softness in metres; default: set by the volume (about one voxel).
@@ -148,16 +148,16 @@ class Slab(Shape):
     Notes
     -----
     SDF ``|n.(x - point)| - t/2``. The slab's own frame has its z axis along the unit normal
-    (x and y in the mid-plane), so an RI map varies across the slab along its own z. The
+    (x and y in the mid-plane), so a refractive-index map varies across the slab along its own z. The
     orientation comes from ``normal``; a slab has no ``quat``.
     """
 
-    def __init__(self, point, normal, thickness, RI, softness: Optional[float] = None):
+    def __init__(self, point, normal, thickness, n, softness: Optional[float] = None):
         nn.Module.__init__(self)
         self.point = _param(point)
         self.normal = _param(normal)
         self.thickness = _param(thickness)
-        self._set_ri(RI)
+        self._set_n(n)
         self.softness = None if softness is None else float(softness)
 
     def _frame(self) -> Tensor:

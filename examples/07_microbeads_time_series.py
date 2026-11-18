@@ -59,7 +59,7 @@ with torch.no_grad():
             ycenter = (shape.center[1].detach().clone() - 45e-6)*ty[t] + 45e-6
             zcenter = shape.center[2].detach().clone()
             radius = shape.radius.detach().clone()
-            RI = shape.RI.detach().clone() - 0.04*t # torch.randn(1)[0]/10
+            RI = shape.n.detach().clone() - 0.04*t # torch.randn(1)[0]/10
             
             vol_t.add([scene.shapes.Sphere(torch.tensor((xcenter, ycenter, 5e-6)).float(), radius, RI)])
             

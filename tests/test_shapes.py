@@ -122,7 +122,7 @@ def test_shape_gradients(name):
     w = torch.rand(40, 40, 40, generator=torch.Generator().manual_seed(0)) - 0.5
     (vol() * w).sum().backward()
     size = {"sphere": "radius", "cube": "length", "ellipsoid": "radii"}[name]
-    for pname in ("center", size, "quat", "RI"):
+    for pname in ("center", size, "quat", "n"):
         g = getattr(shape, pname).grad
         assert g is not None and torch.isfinite(g).all() and g.abs().sum() > 0, f"{name}.{pname}"
 
@@ -148,11 +148,11 @@ def test_collection_ri_to_zero():
     ri = vol()
     assert torch.isfinite(ri).all() and ri.min().item() == pytest.approx(0.0, abs=1e-3)
     (ri * torch.linspace(0, 1, 24)[:, None, None]).sum().backward()
-    for p in (sphere.center, sphere.radius, sphere.RI):
+    for p in (sphere.center, sphere.radius, sphere.n):
         assert torch.isfinite(p.grad).all() and p.grad.abs().sum() > 0
     with torch.no_grad():
         occ0 = sphere.occupancy(vol.grid, vol.default_softness)
-        sphere.RI.fill_(1.5)
+        sphere.n.fill_(1.5)
         torch.testing.assert_close(sphere.occupancy(vol.grid, vol.default_softness), occ0)
 
 
@@ -173,7 +173,7 @@ def test_slab():
     # unnormalised normal work, and the normal stays a trainable parameter (B5).
     n_hat = torch.tensor([1., 1., 1.]) / 3 ** 0.5
     slab = scene.shapes.Slab(C.clone(), torch.tensor([1., 1., 1.]), torch.tensor(0.6e-6), 1.5)
-    assert isinstance(slab.normal, torch.nn.Parameter) and isinstance(slab.RI, torch.nn.Parameter)
+    assert isinstance(slab.normal, torch.nn.Parameter) and isinstance(slab.n, torch.nn.Parameter)
     vol = scene.CollectionVolume((40, 40, 40), (0.1e-6,) * 3, 1.33)
     vol.add([slab])
     ri = vol()
@@ -185,5 +185,5 @@ def test_slab():
         surface = C + torch.stack([0.3e-6 * n_hat, -0.3e-6 * n_hat])
         torch.testing.assert_close(slab(surface, softness=0.05e-6), torch.full((2,), 0.5))
     (ri * torch.linspace(0, 1, 40)[:, None, None]).sum().backward()
-    for p in (slab.point, slab.normal, slab.thickness, slab.RI):
+    for p in (slab.point, slab.normal, slab.thickness, slab.n):
         assert torch.isfinite(p.grad).all() and p.grad.abs().sum() > 0

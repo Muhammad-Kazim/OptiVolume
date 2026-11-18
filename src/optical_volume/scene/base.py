@@ -7,7 +7,7 @@ negative inside, positive outside, in metres. Its **occupancy** is a soft step o
     occupancy = sigmoid(-sdf / softness),
 
 with ``softness`` in metres: the 10-90 % edge width is ``2 ln 9 * softness ~ 4.39 * softness``
-for every shape and size. A shape's refractive index is a separate feature (``RI``): a scalar,
+for every shape and size. A shape's refractive index is a separate feature (``n``): a scalar,
 or a map that varies inside the shape (:mod:`.refractive_index`).
 :class:`~optical_volume.scene.volume.CollectionVolume` combines occupancy and refractive index.
 """
@@ -64,11 +64,11 @@ class Shape(nn.Module):
     ----------
     center : Tensor
         Centre ``(3,)`` in metres (parameter).
-    RI : float, Tensor, nn.Module or callable
-        Refractive index inside the shape. A number or scalar tensor is a parameter ``RI``. A
+    n : float, Tensor, nn.Module or callable
+        Refractive index inside the shape. A number or scalar tensor is a parameter ``n``. A
         map (:class:`~.refractive_index.VoxelRI`, :class:`~.refractive_index.FunctionRI`, any
         ``nn.Module`` or callable of object-frame points ``(..., 3)``) makes it vary inside the
-        shape; it is stored as ``ri_map`` and ``RI`` is ``None``.
+        shape; it is stored as ``n_map`` and ``n`` is ``None``.
     softness : float, optional
         Edge softness in metres (10-90 % edge width 4.39 * softness). ``None`` (default): set
         by the volume the shape is placed in, about one voxel (:func:`default_softness`).
@@ -78,21 +78,21 @@ class Shape(nn.Module):
         Rotation angle in degrees; the shape is rotated by it about the axis (right-handed).
     """
 
-    def __init__(self, center, RI, softness: Optional[float] = None,
+    def __init__(self, center, n, softness: Optional[float] = None,
                  rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
         super().__init__()
         self.center = _param(center)
-        self._set_ri(RI)
+        self._set_n(n)
         self.softness = None if softness is None else float(softness)
         self.quat = nn.Parameter(_axis_angle_quat(rotation_axis, rotation_angle))
 
-    def _set_ri(self, RI):
-        if isinstance(RI, nn.Module) or (callable(RI) and not isinstance(RI, Tensor)):
-            self.ri_map = RI if isinstance(RI, nn.Module) else FunctionRI(RI)
-            self.register_parameter("RI", None)
+    def _set_n(self, n):
+        if isinstance(n, nn.Module) or (callable(n) and not isinstance(n, Tensor)):
+            self.n_map = n if isinstance(n, nn.Module) else FunctionRI(n)
+            self.register_parameter("n", None)
         else:
-            self.ri_map = None
-            self.RI = _param(RI)
+            self.n_map = None
+            self.n = _param(n)
 
     def local(self, points: Tensor) -> Tensor:
         """Object-frame coordinates ``(..., 3)`` of world points (backward map)."""
@@ -121,11 +121,11 @@ class Shape(nn.Module):
         return self.occupancy(points, softness)
 
     def refractive_index(self, points: Tensor) -> Tensor:
-        """Refractive index at world points ``(..., 3)``: the scalar ``RI`` broadcast, or the
+        """Refractive index at world points ``(..., 3)``: the scalar ``n`` broadcast, or the
         map evaluated at the object-frame coordinates (so it moves and rotates with the shape)."""
-        if self.ri_map is not None:
-            return self.ri_map(self.local(points))
-        return self.RI.expand(points.shape[:-1])
+        if self.n_map is not None:
+            return self.n_map(self.local(points))
+        return self.n.expand(points.shape[:-1])
 
     def set_quat(self, rotation_axis, rotation_angle):
         """Set the orientation in place: axis ``(3,)`` and angle in degrees."""

@@ -39,7 +39,7 @@ def test_volume_propagation_is_differentiable():
     assert field.is_complex()
     field.real.sum().backward()
     assert sphere.radius.grad is not None
-    assert sphere.RI.grad is not None
+    assert sphere.n.grad is not None
 
 
 def test_free_space_plane_wave_keeps_unit_amplitude():
@@ -56,7 +56,7 @@ def test_lens_passes_dc():
 
 
 def test_binary_phase_mask_is_phase_only():
-    mask = optics.BinaryPhaseMask(WL, 4e-6, SPACING, SHAPE, height=500e-9, sigma=1.0, RI_PM=1.46)
+    mask = optics.BinaryPhaseMask(WL, 4e-6, SPACING, SHAPE, height=500e-9, sigma=1.0, n_mask=1.46)
     plane_wave = torch.ones(SHAPE[:2], dtype=torch.complex64)
     out = mask(plane_wave)
     assert out.shape == SHAPE[:2]

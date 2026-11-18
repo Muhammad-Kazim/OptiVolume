@@ -70,7 +70,7 @@ class FunctionRI(nn.Module):
     fn : callable
         Maps points ``(..., 3)`` (metres, relative to the shape's centre, rotated with it) to
         refractive indices ``(...)``. For trainable parameters, pass an ``nn.Module`` as the
-        shape's ``RI`` directly instead.
+        shape's ``n`` directly instead.
 
     Examples
     --------
