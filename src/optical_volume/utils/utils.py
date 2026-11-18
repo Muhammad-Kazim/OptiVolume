@@ -29,23 +29,36 @@ def load_pkl(filename):
         print('File does not exist.')
         
 
-def normalization(field, totype='int16'):
-    """normalizes field to 0-1.
+def normalization(field, totype='uint16'):
+    """Scale a real 2D array linearly to the full range of an unsigned integer type.
 
-    Args:
-        field (float): 2d floating point arrays.
-        totype (str): 'int16' or 'int8'
+    Parameters
+    ----------
+    field : array_like
+        Real values (any units).
+    totype : {'uint16', 'uint8'}
+        Output type: the minimum maps to 0, the maximum to ``2**bits - 1``.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``field`` rescaled and rounded to ``totype``. A constant field gives zeros.
+
+    Raises
+    ------
+    ValueError
+        For any other ``totype`` (the old names ``'int16'`` and ``'int8'`` were misleading:
+        they returned unsigned types).
     """
-    
-    field = (field - field.min())/(field.max() - field.min())
-    
-    if totype == 'int16':
-        return np.array(field*(2**16) - 1, dtype=np.uint16)
-    elif totype == 'int8':
-        return np.array(field*(2**8) - 1, dtype=np.uint8)
-    else:
-        print('Wrong totype')
-        
+    dtypes = {'uint16': np.uint16, 'uint8': np.uint8}
+    if totype not in dtypes:
+        raise ValueError(f"totype must be 'uint16' or 'uint8', got {totype!r}")
+    field = np.asarray(field, dtype=np.float64)
+    span = field.max() - field.min()
+    unit = (field - field.min()) / span if span > 0 else np.zeros_like(field)
+    top = np.iinfo(dtypes[totype]).max                       # 2**bits - 1
+    return np.rint(unit * top).astype(dtypes[totype])
+
 
 def plot(imgs, **imshow_kwargs):
     from matplotlib import pyplot as plt  # optional dependency: pip install optical-volume[plot]
