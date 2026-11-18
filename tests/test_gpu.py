@@ -49,13 +49,13 @@ def centre_mean(img):
 
 def _elements():
     return {
-        "pixel_integer": (optics.utils.PixelIntegrator(3), "real"),
-        "pixel_fractional_offset": (optics.utils.PixelIntegrator(pixel_size=6e-6, spacing=2.5e-6, offset=(3e-7, -2e-7)), "real"),
-        "intensity": (optics.utils.Intensity(), "complex"),
-        "magnification": (optics.utils.Magnification(40), "complex"),
-        "resample_fourier": (optics.utils.Resample(2), "complex"),
-        "resample_bilinear": (optics.utils.Resample(2, method="bilinear"), "complex"),
-        "coherence_blur": (optics.utils.PartialCoherenceBlur((1e-7, 1e-7), sigma0=5e-8, angular_spread=0.05, defocus=5e-6), "complex"),
+        "pixel_integer": (optics.PixelIntegrator(3), "real"),
+        "pixel_fractional_offset": (optics.PixelIntegrator(pixel_size=6e-6, spacing=2.5e-6, offset=(3e-7, -2e-7)), "real"),
+        "intensity": (optics.Intensity(), "complex"),
+        "magnification": (optics.Magnification(40), "complex"),
+        "resample_fourier": (optics.Resample(2), "complex"),
+        "resample_bilinear": (optics.Resample(2, method="bilinear"), "complex"),
+        "coherence_blur": (optics.PartialCoherenceBlur((1e-7, 1e-7), sigma0=5e-8, angular_spread=0.05, defocus=5e-6), "complex"),
         "binary_mask": (optics.BinaryPhaseMask(WL, 12e-6, (2e-6, 2e-6), (96, 96), 100e-9, 0.6, 1.46, seed=0), "complex"),
         "free_space": (optics.FreeSpacePropagator(WL, (2e-6, 2e-6), 1.43e-3, padding=32), "complex"),
         "lens": (optics.F4ImagingSystem(WL, (1e-7, 1e-7), (96, 96), 0.7), "complex"),
@@ -90,9 +90,9 @@ def _grad_cases():
     field = torch.polar(torch.rand(64, 64, generator=g) + 0.5, torch.rand(64, 64, generator=g))
     mask = optics.BinaryPhaseMask(WL, 12e-6, (2e-6, 2e-6), (64, 64), 100e-9, 0.6, 1.46, seed=0)
     return {
-        "pixel_offset": (optics.utils.PixelIntegrator(pixel_size=6e-6, spacing=2.5e-6, offset=(3e-7, -2e-7)),
+        "pixel_offset": (optics.PixelIntegrator(pixel_size=6e-6, spacing=2.5e-6, offset=(3e-7, -2e-7)),
                          torch.rand(64, 64, generator=g), ["offset"]),
-        "coherence_blur": (optics.utils.PartialCoherenceBlur((1e-7, 1e-7), sigma0=5e-8, angular_spread=0.05, defocus=5e-6),
+        "coherence_blur": (optics.PartialCoherenceBlur((1e-7, 1e-7), sigma0=5e-8, angular_spread=0.05, defocus=5e-6),
                            field, ["sigma0", "angular_spread", "defocus"]),
         "mask_height": (optics.OpticalSystem((mask, optics.FreeSpacePropagator(WL, (2e-6, 2e-6), 1.43e-3, padding=16))),
                         field, ["elements.0.height"]),
@@ -204,9 +204,9 @@ def _cwfs_chain(obj_spacing, shape, NA, mag, eff_mag, dist, tile, height, sigma,
         optics.FreeSpacePropagator(WL / n_bg, obj_spacing[:2], shape[2] * obj_spacing[2] / 2 - 1e-9,
                                    direction="backward", padding=pad),
         optics.F4ImagingSystem(WL, obj_spacing, shape, NA),
-        optics.utils.Magnification(mag), optics.utils.Resample(eff_mag),
+        optics.Magnification(mag), optics.Resample(eff_mag),
         to_mask, mask, to_sensor,
-        optics.utils.Intensity(), optics.utils.PixelIntegrator(pixel_size=pixel, spacing=img_spacing)))
+        optics.Intensity(), optics.PixelIntegrator(pixel_size=pixel, spacing=img_spacing)))
     return system, mask, to_mask
 
 
@@ -293,10 +293,10 @@ def test_example07_camera_chain():
     torch.manual_seed(0)
     system = optics.OpticalSystem((
         optics.FreeSpacePropagator(WL / 1.51, spacing[:2], shape[2] * spacing[2] / 2 - 1e-9, direction="backward", padding=512),
-        optics.utils.PartialCoherenceBlur(spacing[:2]),
-        optics.utils.Resample(eff),
+        optics.PartialCoherenceBlur(spacing[:2]),
+        optics.Resample(eff),
         optics.F4ImagingSystem(WL, [x / eff for x in spacing], img_shape, 0.75),
-        optics.utils.Magnification(40),
+        optics.Magnification(40),
         pipelines.CodedPhaseCamV3(wavelength=WL, spacing=img_spacing, shape=img_shape, padding=512, pad_mode="edge")))
     with torch.no_grad():
         img_cpu = system(bpm(vol()).to(torch.complex64))

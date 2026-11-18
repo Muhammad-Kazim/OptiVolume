@@ -45,7 +45,7 @@ class CodedPhaseCamV3(torch.nn.Module):
         DIGITAL_PX = 6e-6
 
         pm_obj = optics.BinaryPhaseMask(wavelength, TILE_LEN, spacing, shape, PM_HEIGHT, PM_SIG, PM_RI)
-        px_int_obj = optics.utils.PixelIntegrator(pixel_size=DIGITAL_PX, spacing=spacing)
+        px_int_obj = optics.PixelIntegrator(pixel_size=DIGITAL_PX, spacing=spacing)
         # The sensor sits at the image plane and the mask DIST_PM_IM in front of it: propagate
         # back to the mask, modulate, propagate forward again. Two propagators share one
         # distance Parameter, so training it moves the mask as one physical distance.
@@ -55,7 +55,7 @@ class CodedPhaseCamV3(torch.nn.Module):
                                                     padding=padding, pad_mode=pad_mode)
         prop_to_sensor.distance = prop_to_mask.distance
 
-        detector = (optics.utils.Intensity(), px_int_obj) if integrate == 'intensity' else (px_int_obj,)
+        detector = (optics.Intensity(), px_int_obj) if integrate == 'intensity' else (px_int_obj,)
         self.pcam_FM = optics.system.OpticalSystem((
             prop_to_mask, # image plane -> mask plane
             pm_obj, # applying the mask

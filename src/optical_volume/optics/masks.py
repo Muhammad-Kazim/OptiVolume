@@ -1,3 +1,4 @@
+"""Masks: transmission functions and phase masks."""
 import math
 
 import torch
@@ -6,7 +7,7 @@ from typing import Optional, Tuple
 from torch import nn, Tensor
 import torch.nn.functional as F
 
-from .utils import samples_per
+from .sampling import samples_per
 
 
 def _tile_layout(side_length: float, spacing, shape):
@@ -244,3 +245,28 @@ def CustomGaussianBlur(field: Tensor, sigma: Tensor, channels: int = 1):
         kernel2d,
         groups=channels,
     )
+
+
+class Modulator(nn.Module):
+    """Multiply the field by a fixed or trainable transmission function.
+
+    Parameters
+    ----------
+    operator : Tensor
+        Complex or real transmission, broadcastable to the field ``(..., H, W)``.
+        Stored as a buffer, or as a parameter if it already is one or ``trainable=True``.
+    trainable : bool
+        Register ``operator`` as an ``nn.Parameter``.
+    """
+    def __init__(self, operator: Tensor, trainable: bool = False):
+        super().__init__()
+
+        if isinstance(operator, nn.Parameter):
+            self.operator = operator  # keep the caller's parameter (and its optimizer)
+        elif trainable:
+            self.operator = nn.Parameter(torch.as_tensor(operator))
+        else:
+            self.register_buffer('operator', torch.as_tensor(operator))
+
+    def forward(self, field):
+        return self.operator*field

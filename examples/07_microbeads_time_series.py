@@ -92,9 +92,9 @@ vol_prop = optics.VolumePropagator(WL, OBJ_SPACING, N_BG)
 
 # Partial coherence: no blur for now. Set sigma0 (m) or angular_spread (rad) to enable;
 # blurring the field here smooths the object's projection, not the mask pattern.
-psc_approx = optics.utils.PartialCoherenceBlur(OBJ_SPACING[:2], sigma0=0., angular_spread=0., defocus=FOC_PLANE_VAR)
-resample = optics.utils.Resample(EFF_MAG)  # object field sampled at OBJ_SPACING / EFF_MAG
-mag_obj = optics.utils.Magnification(MAG)  # physical: spacing x MAG -> IMG_SPACING, amplitude / MAG
+psc_approx = optics.PartialCoherenceBlur(OBJ_SPACING[:2], sigma0=0., angular_spread=0., defocus=FOC_PLANE_VAR)
+resample = optics.Resample(EFF_MAG)  # object field sampled at OBJ_SPACING / EFF_MAG
+mag_obj = optics.Magnification(MAG)  # physical: spacing x MAG -> IMG_SPACING, amplitude / MAG
 lens = optics.F4ImagingSystem(WL, [x/EFF_MAG for x in OBJ_SPACING], IMG_SHAPE, NA)
 
 prop_obj_space = optics.FreeSpacePropagator(WL/N_BG, OBJ_SPACING[:2], SHAPE[2]*OBJ_SPACING[2]/2 - FOC_PLANE_VAR, direction='backward', padding=PAD)

@@ -57,13 +57,13 @@ def _v5_cwfs_chain():
             direction="backward", padding=PAD,
         ),
         optics.F4ImagingSystem(WL, OBJ_SPACING, OBJ_SHAPE, NA=0.7),
-        optics.utils.Magnification(mag),
-        optics.utils.Resample(eff_mag),
+        optics.Magnification(mag),
+        optics.Resample(eff_mag),
         prop_to_mask,
         mask,
         prop_to_sensor,
-        optics.utils.Intensity(),
-        optics.utils.PixelIntegrator(int(6e-6 / img_spacing[0])),
+        optics.Intensity(),
+        optics.PixelIntegrator(int(6e-6 / img_spacing[0])),
     ))
 
 

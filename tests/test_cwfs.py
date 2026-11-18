@@ -33,7 +33,7 @@ def test_cwfs_mask_plane():
     with torch.no_grad():
         mask.height.zero_()
         img = cam(field)
-        direct = optics.utils.PixelIntegrator(4)(field.abs() ** 2)
+        direct = optics.PixelIntegrator(4)(field.abs() ** 2)
     torch.testing.assert_close(img, direct, rtol=1e-4, atol=1e-4 * direct.max().item())
 
 
@@ -56,6 +56,6 @@ def test_cwfs_integrate_option():
                                             padding=None, integrate=mode)
             to_mask, mask, to_sensor = cam.pcam_FM.elements[:3]
             at_sensor = to_sensor(mask(to_mask(field)))
-            pix = optics.utils.PixelIntegrator(4)
+            pix = optics.PixelIntegrator(4)
             expected = pix(at_sensor.abs() ** 2) if mode == "intensity" else pix(at_sensor).abs() ** 2
             torch.testing.assert_close(cam(field), expected, rtol=1e-4, atol=1e-4 * expected.max().item())
