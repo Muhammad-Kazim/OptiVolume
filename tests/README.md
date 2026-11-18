@@ -9,6 +9,7 @@ Run with `pytest -q` (in the `optical_volume` conda env).
 - `test_system.py`: `OpticalSystem` recording and hooks, `Modulator` registration.
 - `test_shapes.py`: shape factories with rotations, in-place `set_quat`; SDF occupancy (0.5 on the surface), softness in metres, gradients, composition in `CollectionVolume`, `Slab`.
 - `test_utils.py`: `fit_quadratic` (each term's coefficient, optional spacing in metres) and `normalization`.
+- `test_visualization.py`: 2D plots put x to the right and y up, labelled (skipped without matplotlib).
 - `test_volume.py`: `VoxelVolume` defaults (centre, required `n0`); points outside the box are the background.
 - `test_lens.py`: `F4ImagingSystem` soft pupil edge at the cutoff on any grid; NA gradient matches finite differences.
 - `test_ri_maps.py`: refractive-index maps inside shapes (`VoxelRI`, `FunctionRI`): equal to a scalar when uniform, rotate with the shape, trainable.

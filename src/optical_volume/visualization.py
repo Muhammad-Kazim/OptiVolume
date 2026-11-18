@@ -108,40 +108,66 @@ def visualize_grid(RI_distribution, n_background=1., factor=10, angle=(30, 30, 0
     plt.show()
 
 
-def visualize_field(field, support, title="Field Intensity", units=1e-6):
-    plt.imshow(np.abs(field)**2, cmap='gray', extent=[0, support[0]/units, 0, support[1]/units])
-    plt.colorbar()
-    plt.title(title)
-    if units == 1e-6:
-        plt.xlabel('X (um)')
-        plt.ylabel('Y (um)')
-    elif units == 1e-3:
-        plt.xlabel('X (mm)')
-        plt.ylabel('Y (mm)')
-    else:
-        plt.xlabel('X (m)')
-        plt.ylabel('Y (m)')
-    plt.show()
+_UNIT_NAMES = {1.0: "m", 1e-3: "mm", 1e-6: "µm", 1e-9: "nm"}
+
+
+def _to_numpy(field):
+    if hasattr(field, "detach"):                     # torch tensor
+        field = field.detach().cpu().numpy()
+    return np.asarray(field)
+
+
+def _show_xy(ax, data, support, units, **imshow_kwargs):
+    """Plot an array indexed ``[x, y]`` with x to the right and y up (origin at the bottom left)."""
+    extent = [0, support[0] / units, 0, support[1] / units]
+    im = ax.imshow(np.asarray(data).T, origin="lower", extent=extent, **imshow_kwargs)
+    unit = _UNIT_NAMES.get(units, f"{units:g} m")
+    ax.set_xlabel(f"x ({unit})")
+    ax.set_ylabel(f"y ({unit})")
+    return im
+
+
+def visualize_field(field, support, title="Field Intensity", units=1e-6, ax=None):
+    """Plot the intensity ``|field|^2`` of a 2D field indexed ``[x, y]``.
+
+    Parameters
+    ----------
+    field : array_like or Tensor
+        ``(nx, ny)`` complex field.
+    support : tuple of float
+        Field size ``(Lx, Ly)`` in metres.
+    title : str
+        Axes title.
+    units : float
+        Length unit of the axes in metres (``1e-6`` for µm, ``1e-3`` for mm, ``1`` for m).
+    ax : matplotlib Axes, optional
+        Axes to draw into; default: a new figure.
+
+    Returns
+    -------
+    matplotlib Axes
+        x runs to the right and y up, with the origin (sample ``[0, 0]``) at the bottom left.
+        Call ``plt.show()`` in a script to display it.
+    """
+    if ax is None:
+        _, ax = plt.subplots()
+    im = _show_xy(ax, np.abs(_to_numpy(field)) ** 2, support, units, cmap="gray")
+    ax.figure.colorbar(im, ax=ax)
+    ax.set_title(title)
+    return ax
+
 
 def visualize_complex_field(field, support, title="Complex Wavefield", units=1e-6):
-    
+    """Plot intensity and phase of a 2D field indexed ``[x, y]``, side by side.
+
+    Parameters are as for :func:`visualize_field`. Returns the two Axes (intensity, phase),
+    both with x to the right, y up and the origin at the bottom left.
+    """
+    field = _to_numpy(field)
     fig, axs = plt.subplots(1, 2, figsize=(15, 4))
-    
-    cm0 = axs[0].imshow(np.abs(field)**2, cmap='gray', extent=[0, support[0]/units, 0, support[1]/units])
-    cm1 = axs[1].imshow(np.angle(field), cmap='gray', extent=[0, support[0]/units, 0, support[1]/units])
-    
-    plt.colorbar(cm0, ax=axs[0])
-    plt.colorbar(cm1, ax=axs[1])
-    
-    plt.suptitle(title)
-    
-    if units == 1e-6:
-        plt.xlabel('X (um)')
-        plt.ylabel('Y (um)')
-    elif units == 1e-3:
-        plt.xlabel('X (mm)')
-        plt.ylabel('Y (mm)')
-    else:
-        plt.xlabel('X (m)')
-        plt.ylabel('Y (m)')
-    plt.show()
+    for ax, data, name in zip(axs, (np.abs(field) ** 2, np.angle(field)), ("intensity", "phase (rad)")):
+        im = _show_xy(ax, data, support, units, cmap="gray")
+        fig.colorbar(im, ax=ax)
+        ax.set_title(name)
+    fig.suptitle(title)
+    return axs
