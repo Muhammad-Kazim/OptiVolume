@@ -3,7 +3,7 @@ from torch import Tensor, nn
 
 from typing import Tuple
 
-from .utils import from_axis_angle, to_axis_angle, to_matrix
+from .utils import from_axis_angle, world_to_object
 
 # all shapes are voxel volumes of analytical objects
 
@@ -45,12 +45,7 @@ class Sphere(nn.Module):
 
     def forward(self, grid: Tensor):
 
-        # Rotation Matrix
-        R = to_matrix(self.quat).squeeze()
-
-        # World -> object coordinates
-        pts = grid - self.center
-        pts = pts @ R
+        pts = world_to_object(grid, self.center, self.quat)
 
         return self.RI * (1 - _soft_step(pts[..., 0]**2 + pts[..., 1]**2 + pts[..., 2]**2 - self.radius**2, self.softness))
 
@@ -86,12 +81,7 @@ class Cube(nn.Module):
 
     def forward(self, grid: Tensor):
 
-        # Rotation Matrix
-        R = to_matrix(self.quat).squeeze()
-
-        # World -> object coordinates
-        pts = grid - self.center
-        pts = pts @ R
+        pts = world_to_object(grid, self.center, self.quat)
 
         if self.length.dim() > 0 and self.length.size()[0] > 1:
             sx = self.length[0]/2
@@ -158,12 +148,7 @@ class Ellipsoid(nn.Module):
 
     def forward(self, grid: Tensor):
 
-        # Rotation Matrix
-        R = to_matrix(self.quat).squeeze()
-
-        # World -> object coordinates
-        pts = grid - self.center
-        pts = pts @ R
+        pts = world_to_object(grid, self.center, self.quat)
 
         rx, ry, rz = self.radii
 

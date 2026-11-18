@@ -9,6 +9,7 @@ Run with `pytest -q` (in the `optical_volume` conda env).
 - `test_system.py`: `OpticalSystem` recording and hooks, `Modulator` registration.
 - `test_shapes.py`: shape factories with rotations, in-place `set_quat`.
 - `test_volume.py`: `VoxelVolume` defaults (centre, required `n0`).
+- `test_rotation.py`: one rotation convention for shapes and `VoxelVolume` (right-handed, object rotated by R, backward map).
 - `test_phase_mask.py`: seeded phase-mask tile maps and their `state_dict` round trip.
 - `test_cwfs.py`: `CodedPhaseCamV3` mask plane and shared propagation distance.
 - `test_detector.py`: tile/pixel rounding, `PixelIntegrator` (integer, fractional, offset) and `Intensity`.

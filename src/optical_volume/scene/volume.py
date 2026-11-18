@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch import nn, Tensor
 from typing import Optional, Tuple, List
 
-from .utils import from_axis_angle, to_axis_angle, to_matrix
+from .utils import from_axis_angle, world_to_object
 
 class Grid(nn.Module):
     def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float]):
@@ -59,7 +59,9 @@ class VoxelVolume(nn.Module):
     rotation_axis : tuple of float
         Rotation axis ``(3,)``.
     rotation_angle : float
-        Rotation angle in degrees.
+        Rotation angle in degrees. The object is rotated by this angle about the axis
+        (right-handed), the same convention as the shapes; see
+        :func:`optical_volume.scene.utils.world_to_object`.
     object_center : tuple of float, optional
         Rotation centre in metres. Default: the centre of the voxel box,
         ``((nx-1)*dx/2, (ny-1)*dy/2, (nz-1)*dz/2)``.
@@ -97,12 +99,9 @@ class VoxelVolume(nn.Module):
 
     def forward(self, grid: Tensor):
 
-        # Rotation matrix
-        R = to_matrix(self.quat).squeeze()
-
-        pts = grid - self.center
-        pts = pts @ R.T
-        pts = pts + self.center
+        # Backward map: each grid point reads the voxels at R^T (g - c) + c, so the object is
+        # rotated by R, the same convention as the analytic shapes.
+        pts = world_to_object(grid, self.center, self.quat) + self.center
 
         # normalize the points to the range [0, 1] for grid_sample
         pts_normalized = pts.clone()
