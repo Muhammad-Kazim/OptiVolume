@@ -1,6 +1,6 @@
 # OptiVolume
 
-`OptiVolume` (`optical_volume`) is a differentiable, PyTorch-based wave-optics toolkit. It builds 3D refractive-index (RI) volumes from simple shapes (spheres, cubes, ellipsoids) or voxel data, and provides optical components such as free-space and beam propagators, a 4f imaging system, phase masks and pixel integration. These chain into imaging pipelines like brightfield and coded wavefront sensing. Every block is a `torch.nn.Module`, so scene and system parameters can be optimised with autograd.
+`OptiVolume` (`optical_volume`) is a differentiable, PyTorch-based wave-optics toolkit. It builds 3D refractive-index (RI) volumes from simple shapes (spheres, cuboids, ellipsoids, slabs) or voxel data, and provides optical components such as free-space and beam propagators, a 4f imaging system, phase masks and pixel integration. These chain into imaging pipelines like brightfield and coded wavefront sensing. Every block is a `torch.nn.Module`, so scene and system parameters can be optimised with autograd.
 
 ## Installation
 
@@ -29,6 +29,7 @@ pip install git+https://github.com/Muhammad-Kazim/OptiVolume.git
 |------------|---------------------------------------|---------------------------------------|
 | `plot`     | matplotlib                            | 2D plotting helpers                   |
 | `mayavi`   | mayavi                                | 3D volume rendering in `visualization`|
+| `mesh`     | plyfile, trimesh                      | reading and voxelizing meshes (example 06) |
 | `examples` | matplotlib, tifffile, jupyter         | running the scripts in `examples/`    |
 | `dev`      | pytest, build, matplotlib, tifffile   | development                           |
 
@@ -86,13 +87,18 @@ See `examples/` for coded wavefront sensing, object rotation, loading 3D models 
 
 ```
 optical_volume/
-├── scene/        RI volumes: shapes, CollectionVolume, VoxelVolume, quaternion utils
-├── optics/       AngularSpectrum, BeamPropagation, FourFSystem,
-│                 BinaryPhaseMask, HeightMapPhaseMask, OpticalSystem, utils
-├── pipelines/    CodedWavefrontSensor (coded wavefront sensing camera)
-├── utils/        gradients, TV/L2 regularisers, fitting, NCC, I/O
-└── visualization.py   matplotlib / mayavi plotting (optional deps)
+├── scene/          shapes (Sphere, Cuboid, Ellipsoid, Slab), RI maps, CollectionVolume, VoxelVolume, rotations
+├── optics/         AngularSpectrum, BeamPropagation, FourFSystem, BinaryPhaseMask, HeightMapPhaseMask,
+│                   Transmission, Magnification, Resample, Intensity, PixelIntegrator,
+│                   PartialCoherenceBlur, OpticalSystem
+├── pipelines/      CodedWavefrontSensor
+├── utils/          fitting, finite differences and regularisers, filters, I/O
+└── visualization/  matplotlib plots; mayavi volume rendering (optional deps)
 ```
+
+The main classes are also available at the top level (`optical_volume.Sphere`). Version 0.2.0
+renamed most of the API; [CHANGELOG.md](CHANGELOG.md) maps the 0.1 names to the new ones, and the
+`v0.1` tag keeps the old API.
 
 Units are SI (metres) throughout.
 

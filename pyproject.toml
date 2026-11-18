@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "optical-volume"
-version = "0.1.0"
+version = "0.2.0"
 description = "Differentiable PyTorch wave-optics: volumetric refractive-index scenes and optical components for brightfield, coded wavefront sensing and other imaging pipelines."
 readme = "README.md"
 license = "CC-BY-4.0"
@@ -34,10 +34,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# 2D plotting helpers in optical_volume.utils / optical_volume.visualization
+# 2D plots in optical_volume.visualization
 plot = ["matplotlib>=3.7"]
 # 3D volume rendering in optical_volume.visualization (heavy; conda is often easier)
 mayavi = ["mayavi>=4.8"]
+# Reading and voxelizing meshes (example 06)
+mesh = ["plyfile>=1.0", "trimesh>=4.0"]
 # Everything the example scripts and notebooks use
 examples = ["matplotlib>=3.7", "tifffile>=2023.7.10", "jupyter"]
 test = ["pytest>=7"]
