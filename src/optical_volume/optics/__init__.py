@@ -8,7 +8,7 @@ from .sampling import Magnification, Resample, samples_per
 from .system import OpticalSystem
 
 __all__ = [
-    "BinaryPhaseMask", "HeightMapPhaseMask", "FourFSystem", "AngularSpectrum", "Intensity",
-    "Magnification", "Transmission", "OpticalSystem", "PartialCoherenceBlur", "PixelIntegrator",
-    "Resample", "BeamPropagation", "samples_per",
+    "AngularSpectrum", "BeamPropagation", "BinaryPhaseMask", "FourFSystem", "HeightMapPhaseMask", "Intensity",
+    "Magnification", "OpticalSystem", "PartialCoherenceBlur", "PixelIntegrator", "Resample", "Transmission",
+    "samples_per",
 ]
