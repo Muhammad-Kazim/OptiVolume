@@ -13,7 +13,7 @@ N_BG = 1.33
 
 def _sphere_volume():
     sphere = scene.shapes.Sphere(
-        torch.tensor([16e-6, 16e-6, 8e-6]), torch.tensor(5e-6), torch.tensor(1.46), softness=1e-12
+        torch.tensor([16e-6, 16e-6, 8e-6]), torch.tensor(5e-6), torch.tensor(1.46)
     )
     vol = scene.CollectionVolume(SHAPE, SPACING, N_BG)
     vol.add([sphere])

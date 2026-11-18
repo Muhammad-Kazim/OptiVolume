@@ -1,10 +1,13 @@
+import warnings
+
 import torch
 import torch.nn.functional as F
 
 from torch import nn, Tensor
 from typing import Optional, Tuple, List
 
-from .utils import from_axis_angle, to_axis_angle, to_matrix
+from .shapes import default_softness
+from .utils import from_axis_angle, world_to_object
 
 class Grid(nn.Module):
     def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float]):
@@ -23,6 +26,26 @@ class Grid(nn.Module):
 
 
 class CollectionVolume(Grid):
+    """Refractive-index volume built from analytic shapes on a regular grid.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        ``(nx, ny, nz)`` samples.
+    spacing : tuple of float
+        Sample spacing ``(dx, dy, dz)`` in metres; sample ``(i, j, k)`` sits at
+        ``(i*dx, j*dy, k*dz)``.
+    n_bg : float
+        Background refractive index.
+
+    Notes
+    -----
+    Shapes are combined in the order they were added, each painting over what is there:
+    ``n <- n * (1 - occupancy) + RI * occupancy``. Where shapes overlap, the later one wins.
+    Shapes with ``softness=None`` get :func:`~optical_volume.scene.shapes.default_softness`
+    of this grid, an edge about one voxel wide.
+    """
+
     def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], n_bg: float):
         super().__init__(shape, spacing)
 
@@ -32,11 +55,23 @@ class CollectionVolume(Grid):
     def add(self, shape: List):
         self.shapes.extend(shape)
 
+    @property
+    def default_softness(self) -> float:
+        """Softness (metres) given to shapes without their own: 10-90 % edge about one voxel."""
+        return default_softness((self.dx, self.dy, self.dz))
+
     def forward(self):
-        field = torch.ones_like(self.grid[..., 0]) * self.n_bg
+        spacing = min(self.dx, self.dy, self.dz)
+        field = torch.full_like(self.grid[..., 0], self.n_bg)
         for shape in self.shapes:
-            mask = shape(self.grid)
-            field = field * (1 - mask/shape.RI) + mask
+            if shape.softness is not None and shape.softness < 0.01 * spacing:
+                warnings.warn(f"{type(shape).__name__} softness {shape.softness:.3g} m is below 1 % of the "
+                              f"voxel spacing ({spacing:.3g} m): its edge is a hard step and gradients with "
+                              "respect to its geometry vanish. Use softness=None for about one voxel.",
+                              stacklevel=2)
+            occ = shape.occupancy(self.grid, softness=self.default_softness)
+            # Occupancy and refractive index stay separate, so nothing divides by RI (A18).
+            field = field * (1 - occ) + shape.refractive_index(self.grid) * occ
 
         return field
 
@@ -59,7 +94,9 @@ class VoxelVolume(nn.Module):
     rotation_axis : tuple of float
         Rotation axis ``(3,)``.
     rotation_angle : float
-        Rotation angle in degrees.
+        Rotation angle in degrees. The object is rotated by this angle about the axis
+        (right-handed), the same convention as the shapes; see
+        :func:`optical_volume.scene.utils.world_to_object`.
     object_center : tuple of float, optional
         Rotation centre in metres. Default: the centre of the voxel box,
         ``((nx-1)*dx/2, (ny-1)*dy/2, (nz-1)*dz/2)``.
@@ -67,8 +104,9 @@ class VoxelVolume(nn.Module):
     Notes
     -----
     ``forward(grid)`` samples the rotated volume at the points ``grid (..., 3)`` (metres)
-    with trilinear interpolation. Points outside the box currently take the value of the
-    nearest edge voxel (``padding_mode='border'``).
+    with trilinear interpolation (a backward map, so there are no holes). Points that map
+    outside the voxel box are the background ``n0``: the difference ``volume - n0`` is
+    interpolated with zero padding and ``n0`` added back.
     """
 
     def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], volume: Tensor = None,
@@ -97,12 +135,9 @@ class VoxelVolume(nn.Module):
 
     def forward(self, grid: Tensor):
 
-        # Rotation matrix
-        R = to_matrix(self.quat).squeeze()
-
-        pts = grid - self.center
-        pts = pts @ R.T
-        pts = pts + self.center
+        # Backward map: each grid point reads the voxels at R^T (g - c) + c, so the object is
+        # rotated by R, the same convention as the analytic shapes.
+        pts = world_to_object(grid, self.center, self.quat) + self.center
 
         # normalize the points to the range [0, 1] for grid_sample
         pts_normalized = pts.clone()
@@ -113,15 +148,17 @@ class VoxelVolume(nn.Module):
         # grid_sample expects the grid in the shape (N, D, H, W, 3), so we need to add a batch dimension
         pts_normalized = pts_normalized.unsqueeze(0)
 
-        ri = self.volume.permute(2, 1, 0)
+        # Interpolate the contrast to the background with zero padding, so points outside the
+        # box are exactly n0. Repeating the edge voxels ('border') would smear an object that
+        # touches the box edge out to the grid boundary (A9).
+        contrast = (self.volume - self.n0).permute(2, 1, 0)
 
-        # Sample the RI distribution using grid_sample
-        sampled_ri = F.grid_sample(
-            ri.unsqueeze(0).unsqueeze(0),  # (N, C, D, H, W)
+        sampled = F.grid_sample(
+            contrast.unsqueeze(0).unsqueeze(0),  # (N, C, D, H, W)
             pts_normalized,
             mode='bilinear',
-            padding_mode='border',
+            padding_mode='zeros',
             align_corners=True
         )
 
-        return sampled_ri.squeeze()
+        return sampled.squeeze() + self.n0

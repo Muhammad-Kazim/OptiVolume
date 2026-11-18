@@ -35,13 +35,13 @@ IMG_SHAPE = [x*EFF_MAG for x in SHAPE]
 
 DEVICE = 'cpu'
 
-sphere1 = scene.shapes.Sphere(torch.tensor((60e-6, 20e-6, 5e-6)).float(), torch.tensor((7e-6)), torch.tensor(1.46), softness=1e-12)
-sphere2 = scene.shapes.Sphere(torch.tensor((50e-6, 26e-6, 5e-6)).float(), torch.tensor((8e-6)), torch.tensor(1.46), softness=1e-12)
-sphere3 = scene.shapes.Sphere(torch.tensor((40e-6, 33e-6, 5e-6)).float(), torch.tensor((9e-6)), torch.tensor(1.46), softness=1e-12)
-sphere4 = scene.shapes.Sphere(torch.tensor((32e-6, 40e-6, 5e-6)).float(), torch.tensor((10e-6)), torch.tensor(1.46), softness=1e-12)
-sphere5 = scene.shapes.Sphere(torch.tensor((26e-6, 50e-6, 5e-6)).float(), torch.tensor((9e-6)), torch.tensor(1.46), softness=1e-12)
-sphere6 = scene.shapes.Sphere(torch.tensor((22e-6, 57e-6, 5e-6)).float(), torch.tensor((8e-6)), torch.tensor(1.46), softness=1e-12)
-sphere7 = scene.shapes.Sphere(torch.tensor((19e-6, 66e-6, 5e-6)).float(), torch.tensor((7e-6)), torch.tensor(1.46), softness=1e-12)
+sphere1 = scene.shapes.Sphere(torch.tensor((60e-6, 20e-6, 5e-6)).float(), torch.tensor((7e-6)), torch.tensor(1.46))
+sphere2 = scene.shapes.Sphere(torch.tensor((50e-6, 26e-6, 5e-6)).float(), torch.tensor((8e-6)), torch.tensor(1.46))
+sphere3 = scene.shapes.Sphere(torch.tensor((40e-6, 33e-6, 5e-6)).float(), torch.tensor((9e-6)), torch.tensor(1.46))
+sphere4 = scene.shapes.Sphere(torch.tensor((32e-6, 40e-6, 5e-6)).float(), torch.tensor((10e-6)), torch.tensor(1.46))
+sphere5 = scene.shapes.Sphere(torch.tensor((26e-6, 50e-6, 5e-6)).float(), torch.tensor((9e-6)), torch.tensor(1.46))
+sphere6 = scene.shapes.Sphere(torch.tensor((22e-6, 57e-6, 5e-6)).float(), torch.tensor((8e-6)), torch.tensor(1.46))
+sphere7 = scene.shapes.Sphere(torch.tensor((19e-6, 66e-6, 5e-6)).float(), torch.tensor((7e-6)), torch.tensor(1.46))
     
 vol = scene.CollectionVolume(SHAPE, OBJ_SPACING, N_BG)
 vol.add([sphere1, sphere2, sphere3, sphere4, sphere5, sphere6, sphere7])
@@ -61,7 +61,7 @@ with torch.no_grad():
             radius = shape.radius.detach().clone()
             RI = shape.RI.detach().clone() - 0.04*t # torch.randn(1)[0]/10
             
-            vol_t.add([scene.shapes.Sphere(torch.tensor((xcenter, ycenter, 5e-6)).float(), radius, RI, softness=1e-12)])
+            vol_t.add([scene.shapes.Sphere(torch.tensor((xcenter, ycenter, 5e-6)).float(), radius, RI)])
             
             # break
 

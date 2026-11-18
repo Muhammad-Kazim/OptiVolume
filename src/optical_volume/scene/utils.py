@@ -73,6 +73,39 @@ def to_matrix(quaternions):
 
     return o.reshape(quaternions.shape[:-1] + (3,3))
 
+def world_to_object(points, center, quat):
+    """Object-frame coordinates of world points: the backward (pull) map of a rotated object.
+
+    Every scene object is placed by a centre ``c`` and a rotation ``R`` (from the unit quaternion
+    ``quat``): the object is **rotated by R** about ``c`` (active, right-handed: +90 degrees about z
+    turns +x into +y). To evaluate it on a grid, each grid point ``g`` is mapped back into the
+    object's own frame, ``p = R^T (g - c)``, and the object is evaluated there. This is a backward
+    map: every grid point gets exactly one value, so a rotated object has no holes (a forward map,
+    pushing object samples onto the grid, would leave some cells empty).
+
+    Parameters
+    ----------
+    points : Tensor
+        World coordinates ``(..., 3)`` in metres.
+    center : Tensor
+        Object centre ``(3,)`` in metres.
+    quat : Tensor
+        Rotation quaternion ``(4,)``, real part first (normalised here).
+
+    Returns
+    -------
+    Tensor
+        Object-frame coordinates ``(..., 3)`` in metres, relative to the centre.
+
+    Notes
+    -----
+    With points stored as rows, ``(g - c) @ R`` is ``R^T (g - c)`` for every point. Using
+    ``R`` instead of ``R^T`` would rotate the object the opposite way (plan item A10).
+    """
+    R = to_matrix(quat).reshape(3, 3)
+    return (points - center) @ R
+
+
 def to_axis_angle(quaternions):
     """
     Convert quaternions to axis/angle representation.
