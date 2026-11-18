@@ -82,14 +82,17 @@ class Shape(nn.Module):
                  rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
         super().__init__()
         self.center = _param(center)
+        self._set_ri(RI)
+        self.softness = None if softness is None else float(softness)
+        self.quat = nn.Parameter(_axis_angle_quat(rotation_axis, rotation_angle))
+
+    def _set_ri(self, RI):
         if isinstance(RI, nn.Module) or (callable(RI) and not isinstance(RI, Tensor)):
             self.ri_map = RI if isinstance(RI, nn.Module) else FunctionRI(RI)
             self.register_parameter("RI", None)
         else:
             self.ri_map = None
             self.RI = _param(RI)
-        self.softness = None if softness is None else float(softness)
-        self.quat = nn.Parameter(_axis_angle_quat(rotation_axis, rotation_angle))
 
     def local(self, points: Tensor) -> Tensor:
         """Object-frame coordinates ``(..., 3)`` of world points (backward map)."""
@@ -245,40 +248,52 @@ def make_ellipsoids(centers: Tensor, radii: Tensor, RIs: Tensor, rotation_axes: 
     return [Ellipsoid(centers[i], radii[i], RIs[i], softness=softness, rotation_axis=axis, rotation_angle=angle)
             for i, (axis, angle) in enumerate(rotations)]
 
-class Plane(nn.Module):
+class Slab(Shape):
+    """Infinite slab of ``thickness`` centred on ``point``, perpendicular to ``normal``.
+
+    Parameters
+    ----------
+    point : Tensor
+        ``(3,)`` point on the slab's mid-plane, in metres (parameter).
+    normal : Tensor
+        ``(3,)`` slab normal (parameter, any length; normalised when evaluated).
+    thickness : Tensor
+        Thickness in metres (parameter); the slab spans ``-t/2 <= n.(x - point) <= t/2``.
+    RI : float, Tensor, nn.Module or callable
+        Refractive index inside the slab, as for :class:`Shape`.
+    softness : float, optional
+        Edge softness in metres; default: set by the volume (about one voxel).
+
+    Notes
+    -----
+    SDF ``|n.(x - point)| - t/2``. The slab's own frame has its z axis along the unit normal
+    (x and y in the mid-plane), so an RI map varies across the slab along its own z. The
+    orientation comes from ``normal``; a slab has no ``quat``.
     """
-        Add a thick plane to the grid. Physical coordinates.
 
-        Args:
-            point (float): point that lies on the plane.
-            normal (float): normal to the planes.
-            RI (float): RI of plane.
-            thickness (float, optional): Thickness/2 on either halfspace.
-    """
-    def __init__(self, point: Tensor, normal: Tensor, thickness: Tensor, RI: float, softness: float = 1e-12):
-        super().__init__()
+    def __init__(self, point, normal, thickness, RI, softness: Optional[float] = None):
+        nn.Module.__init__(self)
+        self.point = _param(point)
+        self.normal = _param(normal)
+        self.thickness = _param(thickness)
+        self._set_ri(RI)
+        self.softness = None if softness is None else float(softness)
 
-        self.point = nn.Parameter(point)
-        self.normal = nn.Parameter(normal)/torch.linalg.vector_norm(normal)
-        self.thickness = nn.Parameter(thickness)
-        self.RI = nn.Parameter(RI)
+    def _frame(self) -> Tensor:
+        """Rotation whose columns are (u, v, n): two in-plane directions and the unit normal."""
+        n = self.normal / torch.linalg.vector_norm(self.normal)
+        helper = torch.tensor([1., 0., 0.], dtype=n.dtype, device=n.device)
+        if n[0].abs() > 0.9:
+            helper = torch.tensor([0., 1., 0.], dtype=n.dtype, device=n.device)
+        u = helper - (helper @ n) * n
+        u = u / torch.linalg.vector_norm(u)
+        return torch.stack([u, torch.linalg.cross(n, u), n], dim=-1)
 
-        self.softness = softness
+    def local(self, points: Tensor) -> Tensor:
+        return (points - self.point) @ self._frame()
 
-    def forward(self, grid: Tensor):
-        px, py, pz = self.point
-        nx, ny, nz = self.normal
+    def _sdf(self, p):
+        return p[..., 2].abs() - self.thickness / 2
 
-        X = grid.X - px
-        Y = grid.Y - py
-        Z = grid.Z - pz
-
-        # Plane equation: n . (x - p) = 0
-        mask_p = self._soft_step(nx * X + ny * Y + nz * Z, softness=self.softness)
-        mask_n = 1 - self._soft_step(nx * X + ny * Y + nz * Z - self.thickness, softness=self.softness)
-
-        return self.RI * (1 - mask_p * mask_n)
-
-
-def _soft_step(x: Tensor, softness=1e-6): 
-    return torch.sigmoid(x / softness)
+    def set_quat(self, rotation_axis, rotation_angle):
+        raise AttributeError("a Slab is oriented by its normal; set slab.normal instead")

@@ -166,3 +166,24 @@ def test_collection_overlap_order():
         assert vol()[12, 12, 12].item() == pytest.approx(1.50, abs=1e-4)
         vol.shapes = torch.nn.ModuleList([small, big])
         assert vol()[12, 12, 12].item() == pytest.approx(1.40, abs=1e-4)
+
+
+def test_slab():
+    # n inside |n.(x - p)| < t/2, background outside, symmetric about p (A12). A float RI and an
+    # unnormalised normal work, and the normal stays a trainable parameter (B5).
+    n_hat = torch.tensor([1., 1., 1.]) / 3 ** 0.5
+    slab = scene.shapes.Slab(C.clone(), torch.tensor([1., 1., 1.]), torch.tensor(0.6e-6), 1.5)
+    assert isinstance(slab.normal, torch.nn.Parameter) and isinstance(slab.RI, torch.nn.Parameter)
+    vol = scene.CollectionVolume((40, 40, 40), (0.1e-6,) * 3, 1.33)
+    vol.add([slab])
+    ri = vol()
+    dist = (vol.grid - C) @ n_hat
+    inside, outside = dist.abs() < 0.2e-6, dist.abs() > 0.4e-6
+    torch.testing.assert_close(ri[inside], torch.full_like(ri[inside], 1.5), atol=2e-3, rtol=0)
+    torch.testing.assert_close(ri[outside], torch.full_like(ri[outside], 1.33), atol=2e-3, rtol=0)
+    with torch.no_grad():
+        surface = C + torch.stack([0.3e-6 * n_hat, -0.3e-6 * n_hat])
+        torch.testing.assert_close(slab(surface, softness=0.05e-6), torch.full((2,), 0.5))
+    (ri * torch.linspace(0, 1, 40)[:, None, None]).sum().backward()
+    for p in (slab.point, slab.normal, slab.thickness, slab.RI):
+        assert torch.isfinite(p.grad).all() and p.grad.abs().sum() > 0
