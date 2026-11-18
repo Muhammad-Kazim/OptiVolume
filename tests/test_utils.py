@@ -2,7 +2,7 @@
 import pytest
 import torch
 
-from optical_volume.utils import utils
+from optical_volume import utils
 
 COEFFS = torch.tensor([3e-3, -2e-3, 1.5e-3, 0.2, -0.1, 5.0], dtype=torch.float64)
 

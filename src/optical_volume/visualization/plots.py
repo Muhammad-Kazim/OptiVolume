@@ -1,85 +1,7 @@
-"""Plotting helpers.
-
-matplotlib functions need ``pip install optical-volume[plot]``; the 3D volume
-renderers (``visualize_grid_vol``, ``visualize_grid_iso_surf``) also need mayavi
-(``pip install optical-volume[mayavi]`` or ``conda install -c conda-forge mayavi``).
-"""
+"""2D and simple 3D plots with matplotlib (``pip install optical-volume[plot]``)."""
 import matplotlib.pyplot as plt
 import numpy as np
-
-
-def _mlab():
-    try:
-        from mayavi import mlab
-    except ImportError as err:
-        raise ImportError(
-            "3D rendering needs mayavi: pip install optical-volume[mayavi] "
-            "(or conda install -c conda-forge mayavi)"
-        ) from err
-    return mlab
-
-
-# https://docs.enthought.com/mayavi/mayavi/mlab_case_studies.html
-def visualize_grid_vol(RI_distribution, support=None, n_background=1., factor=2, 
-                       title="3D RI Distribution"):
-    """3d visualization of the gird.
-
-    Args:
-        RI_distribution (3d array): 3d space with RI at each point.
-        n_background (float, optional): background RI. Defaults to 1.
-        factor (int, optional): downsampling, use every factor-th sample. Defaults to 2.
-    """
-    mlab = _mlab()
-    x = np.arange(0, RI_distribution.shape[0], factor)
-    y = np.arange(0, RI_distribution.shape[1], factor)
-    z = np.arange(0, RI_distribution.shape[2], factor)
-    
-    # Axis extent in um
-    # Plots differently (blurry). Not sure why.
-    if support is not None:
-        x = x*support[0]/RI_distribution.shape[0]/1e-6
-        y = y*support[1]/RI_distribution.shape[1]/1e-6
-        z = z*support[2]/RI_distribution.shape[2]/1e-6
-
-    x_mesh, y_mesh, z_mesh = np.meshgrid(x, y, z, indexing="ij")
-    RI_abs = np.abs(RI_distribution - n_background)
-        
-    # Plot scatter with mayavi
-    figure = mlab.figure(title)
-    
-    grid = mlab.pipeline.scalar_field(x_mesh, y_mesh, z_mesh, 
-                                      RI_abs[::factor, ::factor, ::factor])
-
-    mlab.pipeline.volume(grid, vmin=RI_abs.min(), vmax=RI_abs.max())
-    
-    mlab.axes()
-    mlab.show()
-    
-
-# https://docs.enthought.com/mayavi/mayavi/mlab_case_studies.html
-def visualize_grid_iso_surf(RI_distribution, n_background=1., factor=2, 
-                            title='3D Iso-surfaces Visualization'):
-    """3d visualization of iso-surfaces.
-
-    Args:
-        RI_distribution (3d array): 3d space with RI at each point.
-        n_background (float, optional): background RI. Defaults to 1.
-        factor (int, optional): downsampling, use every factor-th sample. Defaults to 2.
-    """
-    mlab = _mlab()
-    x = np.arange(RI_distribution.shape[0]//factor)
-    y = np.arange(RI_distribution.shape[1]//factor)
-    z = np.arange(RI_distribution.shape[2]//factor)
-
-    x_mesh, y_mesh, z_mesh = np.meshgrid(x, y, z, indexing="ij")
-    RI_abs = np.abs(RI_distribution - n_background)
-    # Plot scatter with mayavi
-    figure = mlab.figure(title)
-    
-    mlab.contour3d(x_mesh, y_mesh, z_mesh, 
-                                      RI_abs[::factor, ::factor, ::factor])
-    mlab.axes()
-    mlab.show()
+import torchvision.transforms.functional as TF
 
 
 def visualize_grid(RI_distribution, n_background=1., factor=10, angle=(30, 30, 0)):
@@ -171,3 +93,21 @@ def visualize_complex_field(field, support, title="Complex Wavefield", units=1e-
         ax.set_title(name)
     fig.suptitle(title)
     return axs
+
+
+def plot(imgs, **imshow_kwargs):
+    if not isinstance(imgs[0], list):
+        # Make a 2d grid even if there's just 1 row
+        imgs = [imgs]
+
+    num_rows = len(imgs)
+    num_cols = len(imgs[0])
+    _, axs = plt.subplots(nrows=num_rows, ncols=num_cols, squeeze=False)
+    for row_idx, row in enumerate(imgs):
+        for col_idx, img in enumerate(row):
+            ax = axs[row_idx, col_idx]
+            img = TF.to_pil_image(img.to("cpu"))
+            ax.imshow(np.asarray(img), **imshow_kwargs)
+            ax.set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+
+    plt.tight_layout()
