@@ -167,8 +167,8 @@ def _cwfs_chain(obj_spacing, shape, NA, mag, eff_mag, dist, tile, height, sigma,
 def _ex04():
     spacing, shape = [100e-9] * 3, [600, 600, 100]
     vol = scene.CollectionVolume(shape, spacing, 1.51)
-    vol.add([scene.shapes.Sphere(torch.tensor((20e-6, 45e-6, 3e-6)), torch.tensor(5e-6), torch.tensor(1.46), softness=1e-12),
-             scene.shapes.Sphere(torch.tensor((30e-6, 20e-6, 5e-6)), torch.tensor(3e-6), torch.tensor(1.46), softness=1e-12)])
+    vol.add([scene.shapes.Sphere(torch.tensor((20e-6, 45e-6, 3e-6)), torch.tensor(5e-6), torch.tensor(1.46)),
+             scene.shapes.Sphere(torch.tensor((30e-6, 20e-6, 5e-6)), torch.tensor(3e-6), torch.tensor(1.46))])
     bpm = optics.VolumePropagator(WL, spacing, 1.51)
     system, mask, to_mask = _cwfs_chain(spacing, shape, NA=0.7, mag=40, eff_mag=2, dist=1.43e-3,
                                         tile=12e-6, height=100e-9, sigma=0.6, pixel=6e-6)
@@ -241,8 +241,8 @@ def test_example07_camera_chain():
     spacing, shape, eff = [150e-9, 150e-9, 100e-9], [600, 600, 100], 2
     img_spacing, img_shape = [s * 20 for s in spacing[:2]], [x * eff for x in shape]
     vol = scene.CollectionVolume(shape, spacing, 1.51)
-    vol.add([scene.shapes.Sphere(torch.tensor((60e-6, 20e-6, 5e-6)), torch.tensor(7e-6), torch.tensor(1.46), softness=1e-12),
-             scene.shapes.Sphere(torch.tensor((40e-6, 33e-6, 5e-6)), torch.tensor(9e-6), torch.tensor(1.46), softness=1e-12)])
+    vol.add([scene.shapes.Sphere(torch.tensor((60e-6, 20e-6, 5e-6)), torch.tensor(7e-6), torch.tensor(1.46)),
+             scene.shapes.Sphere(torch.tensor((40e-6, 33e-6, 5e-6)), torch.tensor(9e-6), torch.tensor(1.46))])
     bpm = optics.VolumePropagator(WL, spacing, 1.51)
     torch.manual_seed(0)
     system = optics.OpticalSystem((

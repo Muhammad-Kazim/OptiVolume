@@ -1,9 +1,12 @@
+import warnings
+
 import torch
 import torch.nn.functional as F
 
 from torch import nn, Tensor
 from typing import Optional, Tuple, List
 
+from .shapes import default_softness
 from .utils import from_axis_angle, world_to_object
 
 class Grid(nn.Module):
@@ -23,6 +26,26 @@ class Grid(nn.Module):
 
 
 class CollectionVolume(Grid):
+    """Refractive-index volume built from analytic shapes on a regular grid.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        ``(nx, ny, nz)`` samples.
+    spacing : tuple of float
+        Sample spacing ``(dx, dy, dz)`` in metres; sample ``(i, j, k)`` sits at
+        ``(i*dx, j*dy, k*dz)``.
+    n_bg : float
+        Background refractive index.
+
+    Notes
+    -----
+    Shapes are combined in the order they were added, each painting over what is there:
+    ``n <- n * (1 - occupancy) + RI * occupancy``. Where shapes overlap, the later one wins.
+    Shapes with ``softness=None`` get :func:`~optical_volume.scene.shapes.default_softness`
+    of this grid, an edge about one voxel wide.
+    """
+
     def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float], n_bg: float):
         super().__init__(shape, spacing)
 
@@ -32,11 +55,23 @@ class CollectionVolume(Grid):
     def add(self, shape: List):
         self.shapes.extend(shape)
 
+    @property
+    def default_softness(self) -> float:
+        """Softness (metres) given to shapes without their own: 10-90 % edge about one voxel."""
+        return default_softness((self.dx, self.dy, self.dz))
+
     def forward(self):
-        field = torch.ones_like(self.grid[..., 0]) * self.n_bg
+        spacing = min(self.dx, self.dy, self.dz)
+        field = torch.full_like(self.grid[..., 0], self.n_bg)
         for shape in self.shapes:
-            mask = shape(self.grid)
-            field = field * (1 - mask/shape.RI) + mask
+            if shape.softness is not None and shape.softness < 0.01 * spacing:
+                warnings.warn(f"{type(shape).__name__} softness {shape.softness:.3g} m is below 1 % of the "
+                              f"voxel spacing ({spacing:.3g} m): its edge is a hard step and gradients with "
+                              "respect to its geometry vanish. Use softness=None for about one voxel.",
+                              stacklevel=2)
+            occ = shape.occupancy(self.grid, softness=self.default_softness)
+            # Occupancy and refractive index stay separate, so nothing divides by RI (A18).
+            field = field * (1 - occ) + shape.refractive_index(self.grid) * occ
 
         return field
 

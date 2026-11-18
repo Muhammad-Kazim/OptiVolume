@@ -1,11 +1,30 @@
+"""Analytic shapes defined by signed distance functions (SDFs).
+
+Every shape is placed by a centre and a rotation (see :func:`.utils.world_to_object`; the
+object is rotated by R, right-handed) and described by its signed distance ``sdf(points)``:
+negative inside, positive outside, in metres. Its **occupancy** is a soft step of the SDF,
+
+    occupancy = sigmoid(-sdf / softness),
+
+with ``softness`` in metres: the 10-90 % edge width is ``2 ln 9 * softness ~ 4.39 * softness``
+for every shape and size. A shape's refractive index is a separate feature (``RI``);
+:class:`~optical_volume.scene.volume.CollectionVolume` combines occupancy and refractive index.
+"""
+import warnings
+from typing import Optional, Tuple
+
 import torch
 from torch import Tensor, nn
 
-from typing import Tuple
-
 from .utils import from_axis_angle, world_to_object
 
-# all shapes are voxel volumes of analytical objects
+#: 10-90 % width of sigmoid(-d / s) in units of s: 2 ln 9.
+EDGE_WIDTH_PER_SOFTNESS = 2 * 2.1972245773362196
+
+
+def default_softness(spacing) -> float:
+    """Softness (metres) that gives a 10-90 % edge about one voxel wide on a grid with ``spacing``."""
+    return min(float(d) for d in spacing) / EDGE_WIDTH_PER_SOFTNESS
 
 
 def _axis_angle_quat(rotation_axis, rotation_angle) -> Tensor:
@@ -13,13 +32,6 @@ def _axis_angle_quat(rotation_axis, rotation_angle) -> Tensor:
     axis = torch.as_tensor(rotation_axis, dtype=torch.float32)
     angle = torch.as_tensor(rotation_angle, dtype=torch.float32)
     return from_axis_angle(axis, torch.deg2rad(angle))
-
-
-def _set_quat_(module: nn.Module, rotation_axis, rotation_angle) -> nn.Module:
-    # Copy in place: replacing the Parameter would detach it from existing optimizers.
-    with torch.no_grad():
-        module.quat.copy_(_axis_angle_quat(rotation_axis, rotation_angle))
-    return module
 
 
 def _rotation_rows(n: int, rotation_axes, rotation_angles):
@@ -31,78 +43,146 @@ def _rotation_rows(n: int, rotation_axes, rotation_angles):
                          f"got {tuple(axes.shape)} and {tuple(angles.shape)}")
     return list(zip(axes, angles))
 
-class Sphere(nn.Module):
-    def __init__(self, center: Tensor, radius: Tensor, RI: Tensor, softness=1e-12,
+
+def _safe_norm(v: Tensor) -> Tensor:
+    """Euclidean norm over the last axis with a finite gradient at 0 (where it is 0)."""
+    sq = (v * v).sum(-1)
+    return torch.sqrt(sq.clamp_min(1e-30)) * (sq > 0)
+
+
+def _param(value) -> nn.Parameter:
+    value = value if isinstance(value, Tensor) else torch.as_tensor(value, dtype=torch.float32)
+    return nn.Parameter(value if value.is_floating_point() else value.float())
+
+
+class Shape(nn.Module):
+    """Base class: a posed signed distance function with a refractive index.
+
+    Parameters
+    ----------
+    center : Tensor
+        Centre ``(3,)`` in metres (parameter).
+    RI : float or Tensor
+        Refractive index inside the shape (parameter).
+    softness : float, optional
+        Edge softness in metres (10-90 % edge width 4.39 * softness). ``None`` (default): set
+        by the volume the shape is placed in, about one voxel (:func:`default_softness`).
+    rotation_axis : tuple of float
+        Rotation axis ``(3,)``.
+    rotation_angle : float
+        Rotation angle in degrees; the shape is rotated by it about the axis (right-handed).
+    """
+
+    def __init__(self, center, RI, softness: Optional[float] = None,
                  rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
         super().__init__()
+        self.center = _param(center)
+        self.RI = _param(RI)
+        self.softness = None if softness is None else float(softness)
+        self.quat = nn.Parameter(_axis_angle_quat(rotation_axis, rotation_angle))
 
-        self.center = nn.Parameter(center)
-        self.radius = nn.Parameter(radius)
-        self.RI = nn.Parameter(RI)
-        self.softness = softness
+    def local(self, points: Tensor) -> Tensor:
+        """Object-frame coordinates ``(..., 3)`` of world points (backward map)."""
+        return world_to_object(points, self.center, self.quat)
 
-        self.quat = nn.Parameter(_axis_angle_quat(rotation_axis, rotation_angle))  
+    def sdf(self, points: Tensor) -> Tensor:
+        """Signed distance (metres) at world points ``(..., 3)``: < 0 inside, > 0 outside."""
+        return self._sdf(self.local(points))
 
-    def forward(self, grid: Tensor):
+    def _sdf(self, p: Tensor) -> Tensor:
+        raise NotImplementedError
 
-        pts = world_to_object(grid, self.center, self.quat)
+    def occupancy(self, points: Tensor, softness: Optional[float] = None) -> Tensor:
+        """Occupancy in [0, 1] at world points ``(..., 3)``.
 
-        return self.RI * (1 - _soft_step(pts[..., 0]**2 + pts[..., 1]**2 + pts[..., 2]**2 - self.radius**2, self.softness))
+        ``softness`` (metres) is used only if the shape has none of its own.
+        """
+        s = self.softness if self.softness is not None else softness
+        if s is None:
+            raise ValueError("this shape has softness=None: pass softness= (metres), or evaluate it "
+                             "through a volume, which sets it from the voxel spacing")
+        return torch.sigmoid(-self.sdf(points) / s)
+
+    def forward(self, points: Tensor, softness: Optional[float] = None) -> Tensor:
+        """Occupancy at world points; see :meth:`occupancy`."""
+        return self.occupancy(points, softness)
+
+    def refractive_index(self, points: Tensor) -> Tensor:
+        """Refractive index at world points ``(..., 3)`` (here constant, broadcast to the points)."""
+        return self.RI.expand(points.shape[:-1])
 
     def set_quat(self, rotation_axis, rotation_angle):
         """Set the orientation in place: axis ``(3,)`` and angle in degrees."""
-        return _set_quat_(self, rotation_axis, rotation_angle)
+        # Copy in place: replacing the Parameter would detach it from existing optimizers.
+        with torch.no_grad():
+            self.quat.copy_(_axis_angle_quat(rotation_axis, rotation_angle))
+        return self
 
 
-def make_spheres(centers: Tensor, radii: Tensor, RIs: Tensor, softness: float = 1e-12):
+class Sphere(Shape):
+    """Sphere of ``radius`` (metres, parameter). SDF ``|p| - radius``. See :class:`Shape`."""
 
+    def __init__(self, center, radius, RI, softness: Optional[float] = None,
+                 rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
+        super().__init__(center, RI, softness, rotation_axis, rotation_angle)
+        self.radius = _param(radius)
+
+    def _sdf(self, p):
+        return _safe_norm(p) - self.radius
+
+
+class Cube(Shape):
+    """Cuboid with edge ``length`` (metres, parameter): a scalar for a cube, or ``(3,)`` sides.
+
+    Exact box SDF. See :class:`Shape`.
+    """
+
+    def __init__(self, center, length, RI, softness: Optional[float] = None,
+                 rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
+        super().__init__(center, RI, softness, rotation_axis, rotation_angle)
+        self.length = _param(length)
+
+    def _sdf(self, p):
+        q = p.abs() - self.length / 2
+        outside = _safe_norm(q.clamp_min(0))
+        inside = q.max(dim=-1).values.clamp_max(0)
+        return outside + inside
+
+
+class Ellipsoid(Shape):
+    """Ellipsoid with semi-axes ``radii`` ``(3,)`` (metres, parameter). See :class:`Shape`.
+
+    Notes
+    -----
+    An ellipsoid has no closed-form SDF. This uses the first-order estimate
+    ``k0 (k0 - 1) / k1`` with ``k0 = |p / r|`` and ``k1 = |p / r^2|``: exactly 0 on the surface,
+    with the right gradient there, so occupancy is 0.5 on the surface and the edge has the
+    stated width. Far from the surface it is only approximate, which doesn't matter for the soft
+    step. At the centre (0/0) it takes its limit, ``-min(r)`` to ``-max(r)``; ``-min(r)`` is used.
+    """
+
+    def __init__(self, center, radii, RI, softness: Optional[float] = None,
+                 rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
+        super().__init__(center, RI, softness, rotation_axis, rotation_angle)
+        self.radii = _param(radii)
+
+    def _sdf(self, p):
+        k0 = _safe_norm(p / self.radii)
+        k1 = _safe_norm(p / self.radii ** 2)
+        tiny = 1e-12 / self.radii.min()
+        ratio = torch.where(k1 > tiny, k0 / k1.clamp_min(tiny), self.radii.min())
+        return (k0 - 1) * ratio
+
+
+def make_spheres(centers: Tensor, radii: Tensor, RIs: Tensor, softness: Optional[float] = None):
+    """Build one :class:`Sphere` per row of ``centers (N, 3)``, ``radii (N,)``, ``RIs (N,)``."""
     assert centers.dim() == 2, "Each row must contain sphere attributes"
     assert RIs.size()[0] == centers.shape[0] == radii.size()[0], "Each row must contain sphere attributes"
-
-    shapes = []
-    for i in range(centers.shape[0]):
-        shapes.append(Sphere(centers[i], radii[i], RIs[i], softness=softness))
-
-    return shapes
-
-
-class Cube(nn.Module):
-    def __init__(self, center: Tensor, length: Tensor, RI: Tensor, softness=1e-9, 
-                 rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
-        super().__init__()
-
-        self.center = nn.Parameter(center)
-        self.length = nn.Parameter(length)
-        self.RI = nn.Parameter(RI)
-
-        self.quat = nn.Parameter(_axis_angle_quat(rotation_axis, rotation_angle))  
-
-        self.softness = softness
-
-    def forward(self, grid: Tensor):
-
-        pts = world_to_object(grid, self.center, self.quat)
-
-        if self.length.dim() > 0 and self.length.size()[0] > 1:
-            sx = self.length[0]/2
-            sy = self.length[1]/2
-            sz = self.length[2]/2
-        else:
-            sx = sy = sz = self.length/2
-
-        mask_x = _soft_step(pts[..., 0] + sx, softness=self.softness) * (1 - _soft_step(pts[..., 0] - sx, softness=self.softness))
-        mask_y = _soft_step(pts[..., 1] + sy, softness=self.softness) * (1 - _soft_step(pts[..., 1] - sy, softness=self.softness))
-        mask_z = _soft_step(pts[..., 2] + sz, softness=self.softness) * (1 - _soft_step(pts[..., 2] - sz, softness=self.softness))
-
-        return self.RI * (mask_x * mask_y * mask_z)  # smooth transition between 0 and 1
-
-    def set_quat(self, rotation_axis, rotation_angle):
-        """Set the orientation in place: axis ``(3,)`` and angle in degrees."""
-        return _set_quat_(self, rotation_axis, rotation_angle)
+    return [Sphere(centers[i], radii[i], RIs[i], softness=softness) for i in range(centers.shape[0])]
 
 
 def make_cubes(centers: Tensor, lengths: Tensor, RIs: Tensor, rotation_axes: Tensor = None,
-               rotation_angles: Tensor = None, softness: float = 1e-9):
+               rotation_angles: Tensor = None, softness: Optional[float] = None):
     """Build one :class:`Cube` per row.
 
     Parameters
@@ -117,55 +197,18 @@ def make_cubes(centers: Tensor, lengths: Tensor, RIs: Tensor, rotation_axes: Ten
         ``(N, 3)`` rotation axes; default ``(0, 0, 1)``.
     rotation_angles : Tensor, optional
         ``(N,)`` rotation angles in degrees; default 0.
-    softness : float
-        Edge softness of the sigmoid step, in metres.
+    softness : float, optional
+        Edge softness in metres; default: set by the volume (about one voxel).
     """
-    assert centers.dim()  == 2, "Each row must contain cube attributes"
+    assert centers.dim() == 2, "Each row must contain cube attributes"
     assert RIs.size()[0] == centers.shape[0] == lengths.size()[0], "Each row must contain cube attributes"
-
     rotations = _rotation_rows(centers.shape[0], rotation_axes, rotation_angles)
-    shapes = []
-    for i, (axis, angle) in enumerate(rotations):
-        shapes.append(Cube(centers[i], lengths[i], RIs[i], softness=softness,
-                           rotation_axis=axis, rotation_angle=angle))
-
-    return shapes
-
-
-class Ellipsoid(nn.Module):
-    def __init__(self, center: Tensor, radii: Tensor, RI: Tensor, softness: float = 1e-12,
-                 rotation_axis: Tuple = (0, 0, 1), rotation_angle: float = 0.):
-
-        super().__init__()
-
-        self.center = nn.Parameter(center)
-        self.radii = nn.Parameter(radii)
-        self.RI = nn.Parameter(RI)
-
-        self.quat = nn.Parameter(_axis_angle_quat(rotation_axis, rotation_angle))
-
-        self.softness = softness
-
-    def forward(self, grid: Tensor):
-
-        pts = world_to_object(grid, self.center, self.quat)
-
-        rx, ry, rz = self.radii
-
-        # Compute normalized squared distance
-        mask_x = (pts[..., 0] / rx) ** 2
-        mask_y = (pts[..., 1] / ry) ** 2
-        mask_z = (pts[..., 2] / rz) ** 2
-
-        return self.RI * (1 - _soft_step(mask_x + mask_y + mask_z - 1, softness=self.softness))
-
-    def set_quat(self, rotation_axis, rotation_angle):
-        """Set the orientation in place: axis ``(3,)`` and angle in degrees."""
-        return _set_quat_(self, rotation_axis, rotation_angle)
+    return [Cube(centers[i], lengths[i], RIs[i], softness=softness, rotation_axis=axis, rotation_angle=angle)
+            for i, (axis, angle) in enumerate(rotations)]
 
 
 def make_ellipsoids(centers: Tensor, radii: Tensor, RIs: Tensor, rotation_axes: Tensor = None,
-                    rotation_angles: Tensor = None, softness: float = 1e-12):
+                    rotation_angles: Tensor = None, softness: Optional[float] = None):
     """Build one :class:`Ellipsoid` per row.
 
     Parameters
@@ -180,19 +223,14 @@ def make_ellipsoids(centers: Tensor, radii: Tensor, RIs: Tensor, rotation_axes: 
         ``(N, 3)`` rotation axes; default ``(0, 0, 1)``.
     rotation_angles : Tensor, optional
         ``(N,)`` rotation angles in degrees; default 0.
-    softness : float
-        Softness of the sigmoid step on the normalised radius (dimensionless).
+    softness : float, optional
+        Edge softness in metres; default: set by the volume (about one voxel).
     """
     assert centers.dim() == radii.dim() == 2, "Each row must contain ellipsoid attributes"
     assert RIs.size()[0] == centers.shape[0] == radii.shape[0], "Each row must contain ellipsoid attributes"
-
     rotations = _rotation_rows(centers.shape[0], rotation_axes, rotation_angles)
-    shapes = []
-    for i, (axis, angle) in enumerate(rotations):
-        shapes.append(Ellipsoid(centers[i], radii[i], RIs[i], softness=softness,
-                                rotation_axis=axis, rotation_angle=angle))
-
-    return shapes
+    return [Ellipsoid(centers[i], radii[i], RIs[i], softness=softness, rotation_axis=axis, rotation_angle=angle)
+            for i, (axis, angle) in enumerate(rotations)]
 
 class Plane(nn.Module):
     """

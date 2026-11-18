@@ -28,7 +28,7 @@ def _tile_map(num_x, num_y):
 
 def _sphere_exit_field():
     sphere = scene.shapes.Sphere(
-        torch.tensor((3.2e-6, 3.2e-6, 0.8e-6)), torch.tensor(1.5e-6), torch.tensor(1.46), softness=1e-12
+        torch.tensor((3.2e-6, 3.2e-6, 0.8e-6)), torch.tensor(1.5e-6), torch.tensor(1.46)
     )
     vol = scene.CollectionVolume(OBJ_SHAPE, OBJ_SPACING, N_BG)
     vol.add([sphere])
