@@ -6,8 +6,8 @@ import torch.nn.functional as F
 from torch import nn, Tensor
 from typing import Optional, Tuple, List
 
-from .shapes import default_softness
-from .utils import from_axis_angle, world_to_object
+from .base import default_softness
+from .rotations import from_axis_angle, world_to_object
 
 class Grid(nn.Module):
     def __init__(self, shape: Tuple[int, int, int], spacing: Tuple[float, float, float]):
@@ -96,7 +96,7 @@ class VoxelVolume(nn.Module):
     rotation_angle : float
         Rotation angle in degrees. The object is rotated by this angle about the axis
         (right-handed), the same convention as the shapes; see
-        :func:`optical_volume.scene.utils.world_to_object`.
+        :func:`optical_volume.scene.rotations.world_to_object`.
     object_center : tuple of float, optional
         Rotation centre in metres. Default: the centre of the voxel box,
         ``((nx-1)*dx/2, (ny-1)*dy/2, (nz-1)*dz/2)``.

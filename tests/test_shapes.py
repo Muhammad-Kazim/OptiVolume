@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from optical_volume import scene
-from optical_volume.scene.utils import from_axis_angle
+from optical_volume.scene.rotations import from_axis_angle
 
 AXES = torch.tensor([[0., 0., 1.], [1., 0., 0.], [0., 1., 1.]])
 ANGLES = torch.tensor([0., 30., 90.])
@@ -69,7 +69,7 @@ def _shapes(softness=None):
 def _surface_points(name, shape):
     """World points on the analytic surface (and the object-frame directions they lie in)."""
     with torch.no_grad():
-        R = scene.utils.to_matrix(shape.quat).reshape(3, 3)
+        R = scene.rotations.to_matrix(shape.quat).reshape(3, 3)
         if name == "sphere":
             local = torch.tensor([[1., 0, 0], [0, 1., 0], [0.6, 0, 0.8]]) * shape.radius
         elif name == "cube":
