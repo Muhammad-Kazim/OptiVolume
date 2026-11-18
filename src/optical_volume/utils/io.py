@@ -1,7 +1,6 @@
 """Input/output helpers: loading objects and converting arrays to image formats."""
 import pickle
 import os
-import sys
 import numpy as np
 
 import torch
@@ -57,13 +56,3 @@ def normalization(field, totype='uint16'):
     unit = (field - field.min()) / span if span > 0 else np.zeros_like(field)
     top = np.iinfo(dtypes[totype]).max                       # 2**bits - 1
     return np.rint(unit * top).astype(dtypes[totype])
-
-
-class HiddenPrints:
-    def __enter__(self):
-        self._original_stdout = sys.stdout
-        sys.stdout = open(os.devnull, 'w')
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        sys.stdout.close()
-        sys.stdout = self._original_stdout

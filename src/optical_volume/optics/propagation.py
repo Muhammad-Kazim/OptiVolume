@@ -146,12 +146,6 @@ class AngularSpectrum(nn.Module):
 
         return field
 
-    def set_direction(self, direction):
-        self.direction = direction
-
-        return self
-
-
 class BeamPropagation(nn.Module):
     """Beam propagation method (BPM) through a refractive-index volume.
 

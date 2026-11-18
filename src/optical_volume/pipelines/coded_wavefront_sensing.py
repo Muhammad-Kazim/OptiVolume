@@ -9,7 +9,7 @@ from optical_volume import utils
 
 class CodedWavefrontSensor(torch.nn.Module):
     def __init__(self, wavelength: float, spacing: Tuple[float, float], shape: Tuple[int, int],
-                 padding: Optional[int] = 512, pad_mode: str = 'edge',softness=1e-12,
+                 padding: Optional[int] = 512, pad_mode: str = 'edge',
                  integrate: str = 'intensity'):
         """Coded wavefront sensor: phase mask in front of a camera at the image plane.
 

@@ -32,7 +32,7 @@ def median_filter_2d(input_tensor: Tensor, kernel_size: int = 3) -> Tensor:
         return torch.cat(filtered_channels, dim=1)  # shape: (B, C, H, W)
 
 
-def auto_corr_fn(image: Tensor):
+def autocorrelation(image: Tensor):
     return torch.fft.fftshift(torch.fft.ifft2(torch.fft.fft2(image).abs()**2).real)
 
 

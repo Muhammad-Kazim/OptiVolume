@@ -91,7 +91,6 @@ def test_evanescent_suppressed():
     kappa = 2 * math.pi * math.sqrt(1 / 200e-9**2 - 1 / WL**2)
     assert decay(fine).abs().mean().item() == pytest.approx(math.exp(-kappa * 20e-9), rel=1e-3)
     decay.distance.data.fill_(-20e-9)
-    decay.set_direction("forward")
     assert decay(fine).abs().max() < 1e-4
 
     with pytest.raises(ValueError):
