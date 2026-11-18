@@ -98,6 +98,7 @@ def _grad_cases():
                         field, ["elements.0.height"]),
         "propagation_distance": (optics.FreeSpacePropagator(WL, (2e-6, 2e-6), 1.43e-3, padding=16),
                                  field, ["distance"]),
+        "lens_na": (optics.F4ImagingSystem(WL, (1e-7, 1e-7), (64, 64), 0.6), field, ["NA"]),
     }
 
 
@@ -133,6 +134,51 @@ def test_mask_border_flat_on_gpu():
     with torch.no_grad():
         phase = mask(torch.ones(64, 64, dtype=torch.complex64, device=DEVICE)).angle()
     assert (phase.max() - phase.min()).item() < 1e-5
+
+
+def _scenes():
+    """A CollectionVolume with every shape (one with an RI map) and a rotated VoxelVolume."""
+    n, d = 32, 0.1e-6
+    c = torch.full((3,), (n - 1) * d / 2)
+    coll = scene.CollectionVolume((n, n, n), (d, d, d), 1.33)
+    coll.add([scene.shapes.Slab(c.clone(), torch.tensor([0.2, 0.1, 1.0]), torch.tensor(1.0e-6), 1.36),
+              scene.shapes.Cube(c.clone(), torch.tensor([1.6e-6, 1.0e-6, 0.8e-6]), torch.tensor(1.40),
+                                rotation_axis=(1., 1., 0.), rotation_angle=25.),
+              scene.shapes.Ellipsoid(c + 0.6e-6, torch.tensor([0.9e-6, 0.6e-6, 0.4e-6]), torch.tensor(1.45),
+                                     rotation_axis=(0., 1., 1.), rotation_angle=40.),
+              scene.shapes.Sphere(c - 0.6e-6, torch.tensor(0.5e-6), scene.VoxelRI(
+                  1.42 + 0.04 * torch.rand(8, 8, 8, generator=torch.Generator().manual_seed(3)), 0.15e-6))])
+    vox = scene.VoxelVolume((n, n, n), (d, d, d),
+                            1.33 + 0.05 * torch.rand(n, n, n, generator=torch.Generator().manual_seed(4)),
+                            n0=1.33, rotation_axis=(1., 2., 3.), rotation_angle=35.)
+    grid = scene.volume.Grid((n, n, n), (d, d, d))
+    return {"collection": (coll, lambda m: m()),
+            "voxel_volume": (vox, lambda m: m(grid.grid.to(m.volume.device)))}
+
+
+# The exact box SDF takes the max over the faces; at a point equidistant from two faces the
+# gradient jumps, and float rounding picks the face. Measured float32 vs float64 on the CPU:
+# 2e-2 for these three, <= 5e-6 for every other scene gradient.
+_KINKED = {"shapes.1.center", "shapes.1.length", "shapes.1.quat"}
+
+
+@pytest.mark.parametrize("name", ["collection", "voxel_volume"])
+def test_scene_matches_cpu(name):
+    # Volumes and all their parameter gradients agree between CUDA and the CPU.
+    def run(module, f):
+        module.zero_grad()
+        y = f(module)
+        w = torch.rand(y.shape, generator=torch.Generator().manual_seed(7))
+        (y * (w - w.mean()).to(y.device)).sum().backward()
+        return y.detach().cpu(), {k: p.grad.detach().cpu().clone() for k, p in module.named_parameters()}
+    module, f = _scenes()[name]
+    y_cpu, g_cpu = run(module, f)
+    y_gpu, g_gpu = run(module.to(DEVICE), f)
+    assert_matches_cpu(y_gpu, y_cpu)
+    for k, c in g_cpu.items():
+        rtol = 5e-2 if k in _KINKED else 1e-4
+        torch.testing.assert_close(g_gpu[k], c, rtol=rtol, atol=rtol * c.abs().max().item(),
+                                   msg=lambda m, k=k: f"{k} gradient: {m}")
 
 
 def test_camera_matches_cpu():

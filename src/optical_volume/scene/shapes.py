@@ -151,6 +151,12 @@ class Cube(Shape):
     """Cuboid with edge ``length`` (metres, parameter): a scalar for a cube, or ``(3,)`` sides.
 
     Exact box SDF. See :class:`Shape`.
+
+    Notes
+    -----
+    Inside the box the SDF is the largest of the three face distances, so its gradient jumps
+    on the planes equidistant from two faces. Both sides are valid gradients; for a grid point
+    on such a plane, rounding decides which face it belongs to (e.g. float32 vs float64).
     """
 
     def __init__(self, center, length, RI, softness: Optional[float] = None,
