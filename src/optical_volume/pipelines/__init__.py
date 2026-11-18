@@ -1,1 +1,1 @@
-from .coded_wavefront_sensing import CodedPhaseCamV3
+from .coded_wavefront_sensing import CodedWavefrontSensor

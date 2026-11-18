@@ -33,7 +33,7 @@ def _sphere_exit_field():
     vol = scene.CollectionVolume(OBJ_SHAPE, OBJ_SPACING, N_BG)
     vol.add([sphere])
     with torch.no_grad():
-        return optics.VolumePropagator(WL, OBJ_SPACING, N_BG)(vol())
+        return optics.BeamPropagation(WL, OBJ_SPACING, N_BG)(vol())
 
 
 def _v5_cwfs_chain():
@@ -48,15 +48,15 @@ def _v5_cwfs_chain():
     mask = optics.BinaryPhaseMask(*mask_args, tile_map=_tile_map(*probe.get_num_tiles()))
 
     # Back to the mask, then forward to the sensor, with one shared distance (A1 fixed).
-    prop_to_mask = optics.FreeSpacePropagator(WL, img_spacing, 1.43e-3, direction="backward", padding=PAD)
-    prop_to_sensor = optics.FreeSpacePropagator(WL, img_spacing, 1.43e-3, direction="forward", padding=PAD)
+    prop_to_mask = optics.AngularSpectrum(WL, img_spacing, 1.43e-3, direction="backward", padding=PAD)
+    prop_to_sensor = optics.AngularSpectrum(WL, img_spacing, 1.43e-3, direction="forward", padding=PAD)
     prop_to_sensor.distance = prop_to_mask.distance
     return optics.OpticalSystem((
-        optics.FreeSpacePropagator(
+        optics.AngularSpectrum(
             WL / N_BG, OBJ_SPACING[:2], OBJ_SHAPE[2] * OBJ_SPACING[2] / 2 - 1e-9,
             direction="backward", padding=PAD,
         ),
-        optics.F4ImagingSystem(WL, OBJ_SPACING, OBJ_SHAPE, NA=0.7),
+        optics.FourFSystem(WL, OBJ_SPACING, OBJ_SHAPE, NA=0.7),
         optics.Magnification(mag),
         optics.Resample(eff_mag),
         prop_to_mask,
@@ -84,7 +84,7 @@ def test_char_bpm_sphere(golden):
 
 
 def test_char_coded_phase_cam(golden):
-    cam = pipelines.CodedPhaseCamV3(wavelength=WL, spacing=(1.5e-6, 1.5e-6), shape=(64, 64), padding=16)
+    cam = pipelines.CodedWavefrontSensor(wavelength=WL, spacing=(1.5e-6, 1.5e-6), shape=(64, 64), padding=16)
     pm = cam.pcam_FM.elements[1]
     # Replace the randomly drawn map with the deterministic pattern.
     pm.tile_map.copy_(_tile_map(*pm.get_num_tiles()))

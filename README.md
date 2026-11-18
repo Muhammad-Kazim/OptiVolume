@@ -65,13 +65,13 @@ vol = scene.CollectionVolume(SHAPE, SPACING, N_BG)
 vol.add([bead])
 
 # 2. Propagate a plane wave through the volume (beam propagation method)
-exit_field = optics.VolumePropagator(WL, SPACING, N_BG)(vol())
+exit_field = optics.BeamPropagation(WL, SPACING, N_BG)(vol())
 
 # 3. Refocus to the volume centre and image with a 4f system
 imaging = optics.OpticalSystem((
-    optics.FreeSpacePropagator(WL / N_BG, SPACING[:2], SHAPE[2] * SPACING[2] / 2,
+    optics.AngularSpectrum(WL / N_BG, SPACING[:2], SHAPE[2] * SPACING[2] / 2,
                                direction="backward", padding=128),
-    optics.F4ImagingSystem(WL, SPACING[:2], SHAPE[:2], NA=0.75),
+    optics.FourFSystem(WL, SPACING[:2], SHAPE[:2], NA=0.75),
 ))
 intensity = imaging(exit_field).abs() ** 2
 
@@ -87,9 +87,9 @@ See `examples/` for coded wavefront sensing, object rotation, loading 3D models 
 ```
 optical_volume/
 ├── scene/        RI volumes: shapes, CollectionVolume, VoxelVolume, quaternion utils
-├── optics/       FreeSpacePropagator, VolumePropagator, F4ImagingSystem,
-│                 BinaryPhaseMask, CustomPhaseMask, OpticalSystem, utils
-├── pipelines/    CodedPhaseCamV3 (coded wavefront sensing camera)
+├── optics/       AngularSpectrum, BeamPropagation, FourFSystem,
+│                 BinaryPhaseMask, HeightMapPhaseMask, OpticalSystem, utils
+├── pipelines/    CodedWavefrontSensor (coded wavefront sensing camera)
 ├── utils/        gradients, TV/L2 regularisers, fitting, NCC, I/O
 └── visualization.py   matplotlib / mayavi plotting (optional deps)
 ```

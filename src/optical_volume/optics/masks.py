@@ -134,7 +134,7 @@ class BinaryPhaseMask(nn.Module):
         self.seed = state['seed']
 
 
-class CustomPhaseMask(nn.Module):
+class HeightMapPhaseMask(nn.Module):
     """Phase mask with one trainable height per square tile.
 
     Parameters
@@ -247,7 +247,7 @@ def CustomGaussianBlur(field: Tensor, sigma: Tensor, channels: int = 1):
     )
 
 
-class Modulator(nn.Module):
+class Transmission(nn.Module):
     """Multiply the field by a fixed or trainable transmission function.
 
     Parameters

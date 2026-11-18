@@ -26,7 +26,7 @@ def test_ri_map_constant_equals_scalar():
 def test_ri_map_rotates_with_shape():
     # A map rising along the cube's own x axis rises along world y after +90 degrees about z.
     values = torch.linspace(1.40, 1.50, 9)[:, None, None].expand(9, 9, 9).clone()
-    cube = scene.shapes.Cube(C.clone(), torch.tensor(2.4e-6), scene.VoxelRI(values, 0.3e-6),
+    cube = scene.shapes.Cuboid(C.clone(), torch.tensor(2.4e-6), scene.VoxelRI(values, 0.3e-6),
                              rotation_axis=(0, 0, 1), rotation_angle=90.)
     with torch.no_grad():
         ri = _volume(cube)()

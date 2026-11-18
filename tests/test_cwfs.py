@@ -1,16 +1,16 @@
-"""CodedPhaseCamV3: mask plane and shared distance (A1)."""
+"""CodedWavefrontSensor: mask plane and shared distance (A1)."""
 import torch
 
 from optical_volume import optics, pipelines
 
 WL = 500e-9
 SPACING = (1.5e-6, 1.5e-6)
-DIST = 2.5e-3  # DIST_PM_IM in CodedPhaseCamV3
+DIST = 2.5e-3  # DIST_PM_IM in CodedWavefrontSensor
 
 
 def _camera():
     # No padding, so propagation is periodic and back-and-forth is exact.
-    return pipelines.CodedPhaseCamV3(wavelength=WL, spacing=SPACING, shape=(64, 64), padding=None)
+    return pipelines.CodedWavefrontSensor(wavelength=WL, spacing=SPACING, shape=(64, 64), padding=None)
 
 
 def _field(seed=0):
@@ -26,7 +26,7 @@ def test_cwfs_mask_plane():
     field = _field()
     with torch.no_grad():
         cam(field)
-        expected = optics.FreeSpacePropagator(WL, SPACING, -DIST)(field)
+        expected = optics.AngularSpectrum(WL, SPACING, -DIST)(field)
     torch.testing.assert_close(seen[0], expected, rtol=1e-4, atol=1e-4)
 
     # A flat mask: the sensor sees the image-plane field itself.
@@ -52,7 +52,7 @@ def test_cwfs_integrate_option():
     field = _field(1)
     with torch.no_grad():
         for mode in ("intensity", "field"):
-            cam = pipelines.CodedPhaseCamV3(wavelength=WL, spacing=SPACING, shape=(64, 64),
+            cam = pipelines.CodedWavefrontSensor(wavelength=WL, spacing=SPACING, shape=(64, 64),
                                             padding=None, integrate=mode)
             to_mask, mask, to_sensor = cam.pcam_FM.elements[:3]
             at_sensor = to_sensor(mask(to_mask(field)))

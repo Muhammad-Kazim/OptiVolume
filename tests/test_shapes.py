@@ -20,7 +20,7 @@ def test_make_shapes():
     centers = torch.rand(3, 3) * 1e-5
     ris = torch.tensor([1.4, 1.45, 1.5])
     built = [
-        scene.shapes.make_cubes(centers, torch.full((3,), 2e-6), ris,
+        scene.shapes.make_cuboids(centers, torch.full((3,), 2e-6), ris,
                                 rotation_axes=AXES, rotation_angles=ANGLES),
         scene.shapes.make_ellipsoids(centers, torch.full((3, 3), 2e-6), ris,
                                      rotation_axes=AXES, rotation_angles=ANGLES),
@@ -30,7 +30,7 @@ def test_make_shapes():
         for shape, axis, angle in zip(shapes, AXES, ANGLES):
             torch.testing.assert_close(shape.quat.detach(), _expected_quat(axis, angle))
     # Defaults: no rotation.
-    cube = scene.shapes.make_cubes(centers, torch.full((3,), 2e-6), ris)[0]
+    cube = scene.shapes.make_cuboids(centers, torch.full((3,), 2e-6), ris)[0]
     torch.testing.assert_close(cube.quat.detach(), _expected_quat(AXES[0], ANGLES[0]))
 
 
@@ -61,7 +61,7 @@ def _shapes(softness=None):
     kw = dict(softness=softness, rotation_axis=(1., 1., 0.), rotation_angle=25.)
     return {
         "sphere": scene.shapes.Sphere(C.clone(), torch.tensor(1e-6), torch.tensor(1.5), **kw),
-        "cube": scene.shapes.Cube(C.clone(), torch.tensor([1.6e-6, 1.0e-6, 0.8e-6]), torch.tensor(1.5), **kw),
+        "cube": scene.shapes.Cuboid(C.clone(), torch.tensor([1.6e-6, 1.0e-6, 0.8e-6]), torch.tensor(1.5), **kw),
         "ellipsoid": scene.shapes.Ellipsoid(C.clone(), torch.tensor([1.2e-6, 0.8e-6, 0.5e-6]), torch.tensor(1.5), **kw),
     }
 

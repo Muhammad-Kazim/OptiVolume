@@ -1,4 +1,4 @@
-"""F4ImagingSystem pupil: soft edge at the cutoff in frequency samples, NA trainable (A14)."""
+"""FourFSystem pupil: soft edge at the cutoff in frequency samples, NA trainable (A14)."""
 import math
 
 import pytest
@@ -13,7 +13,7 @@ WL, DX = 500e-9, 100e-9
 def test_pupil_edge_at_cutoff(n):
     # Choose NA so that the cutoff NA/wavelength falls on a frequency sample (10 samples out).
     df = 1 / (n * DX)
-    lens = optics.F4ImagingSystem(WL, (DX, DX), (n, n), NA=10 * df * WL)
+    lens = optics.FourFSystem(WL, (DX, DX), (n, n), NA=10 * df * WL)
     with torch.no_grad():
         mask = lens.cutoff_mask()
     c = n // 2                                           # zero frequency after fftshift
@@ -33,7 +33,7 @@ def test_na_gradient():
     g = torch.Generator().manual_seed(0)
     field = torch.polar(torch.ones(n, n), 2 * math.pi * torch.rand(n, n, generator=g))
     w = torch.rand(n, n, generator=g) - 0.5
-    lens = optics.F4ImagingSystem(WL, (DX, DX), (n, n), NA=0.6)
+    lens = optics.FourFSystem(WL, (DX, DX), (n, n), NA=0.6)
 
     def loss(na):
         with torch.no_grad():

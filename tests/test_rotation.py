@@ -14,7 +14,7 @@ def _grid():
 
 def _bar(rotation_angle, softness=1e-7):
     """A 3 µm x 1 µm bar along x, rotated about z."""
-    return scene.shapes.Cube(CENTER.clone(), torch.tensor([3e-6, 1e-6, 1e-6]), torch.tensor(1.0),
+    return scene.shapes.Cuboid(CENTER.clone(), torch.tensor([3e-6, 1e-6, 1e-6]), torch.tensor(1.0),
                              softness=softness, rotation_axis=(0, 0, 1), rotation_angle=rotation_angle)
 
 
@@ -27,7 +27,7 @@ def test_rotation_right_handed():
     # A marker at +x from the centre ends up at +y after +90 degrees about z, for both kinds of object.
     grid = _grid()
     offset = torch.tensor([1.5e-6, 0., 0.])
-    marker = scene.shapes.Cube(CENTER + offset, torch.tensor(0.8e-6), torch.tensor(1.0), softness=1e-7)
+    marker = scene.shapes.Cuboid(CENTER + offset, torch.tensor(0.8e-6), torch.tensor(1.0), softness=1e-7)
     with torch.no_grad():
         still = marker(grid)
         vox = scene.VoxelVolume(SHAPE, SPACING, still + 1.0, n0=1.0, rotation_angle=90., object_center=CENTER.tolist())

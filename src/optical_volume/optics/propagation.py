@@ -74,7 +74,7 @@ def _check_evanescent(evanescent: str) -> str:
     return evanescent
 
 
-class FreeSpacePropagator(nn.Module):
+class AngularSpectrum(nn.Module):
     """Angular-spectrum propagation through a homogeneous medium.
 
     Parameters
@@ -152,7 +152,7 @@ class FreeSpacePropagator(nn.Module):
         return self
 
 
-class VolumePropagator(nn.Module):
+class BeamPropagation(nn.Module):
     """Beam propagation method (BPM) through a refractive-index volume.
 
     Parameters

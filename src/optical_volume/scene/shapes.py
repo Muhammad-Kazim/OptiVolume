@@ -1,4 +1,4 @@
-"""Analytic shapes: Sphere, Cube, Ellipsoid and Slab, and factories for many of them.
+"""Analytic shapes: Sphere, Cuboid, Ellipsoid and Slab, and factories for many of them.
 
 See :mod:`.base` for the conventions (signed distance, occupancy, softness in metres).
 """
@@ -22,7 +22,7 @@ class Sphere(Shape):
         return _safe_norm(p) - self.radius
 
 
-class Cube(Shape):
+class Cuboid(Shape):
     """Cuboid with edge ``length`` (metres, parameter): a scalar for a cube, or ``(3,)`` sides.
 
     Exact box SDF. See :class:`Shape`.
@@ -78,9 +78,9 @@ def make_spheres(centers: Tensor, radii: Tensor, RIs: Tensor, softness: Optional
     return [Sphere(centers[i], radii[i], RIs[i], softness=softness) for i in range(centers.shape[0])]
 
 
-def make_cubes(centers: Tensor, lengths: Tensor, RIs: Tensor, rotation_axes: Tensor = None,
+def make_cuboids(centers: Tensor, lengths: Tensor, RIs: Tensor, rotation_axes: Tensor = None,
                rotation_angles: Tensor = None, softness: Optional[float] = None):
-    """Build one :class:`Cube` per row.
+    """Build one :class:`Cuboid` per row.
 
     Parameters
     ----------
@@ -100,7 +100,7 @@ def make_cubes(centers: Tensor, lengths: Tensor, RIs: Tensor, rotation_axes: Ten
     assert centers.dim() == 2, "Each row must contain cube attributes"
     assert RIs.size()[0] == centers.shape[0] == lengths.size()[0], "Each row must contain cube attributes"
     rotations = _rotation_rows(centers.shape[0], rotation_axes, rotation_angles)
-    return [Cube(centers[i], lengths[i], RIs[i], softness=softness, rotation_axis=axis, rotation_angle=angle)
+    return [Cuboid(centers[i], lengths[i], RIs[i], softness=softness, rotation_axis=axis, rotation_angle=angle)
             for i, (axis, angle) in enumerate(rotations)]
 
 

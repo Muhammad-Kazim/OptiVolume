@@ -7,7 +7,7 @@ from optical_volume import optics
 from optical_volume import scene
 from optical_volume import utils
 
-class CodedPhaseCamV3(torch.nn.Module):
+class CodedWavefrontSensor(torch.nn.Module):
     def __init__(self, wavelength: float, spacing: Tuple[float, float], shape: Tuple[int, int],
                  padding: Optional[int] = 512, pad_mode: str = 'edge',softness=1e-12,
                  integrate: str = 'intensity'):
@@ -49,9 +49,9 @@ class CodedPhaseCamV3(torch.nn.Module):
         # The sensor sits at the image plane and the mask DIST_PM_IM in front of it: propagate
         # back to the mask, modulate, propagate forward again. Two propagators share one
         # distance Parameter, so training it moves the mask as one physical distance.
-        prop_to_mask = optics.FreeSpacePropagator(wavelength, spacing, DIST_PM_IM, direction='backward',
+        prop_to_mask = optics.AngularSpectrum(wavelength, spacing, DIST_PM_IM, direction='backward',
                                                   padding=padding, pad_mode=pad_mode)
-        prop_to_sensor = optics.FreeSpacePropagator(wavelength, spacing, DIST_PM_IM, direction='forward',
+        prop_to_sensor = optics.AngularSpectrum(wavelength, spacing, DIST_PM_IM, direction='forward',
                                                     padding=padding, pad_mode=pad_mode)
         prop_to_sensor.distance = prop_to_mask.distance
 
